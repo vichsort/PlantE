@@ -1,17 +1,17 @@
 from flask import Flask
 from config import Config
 from .cli import register_commands
+from .extensions import db, migrate
 
 def create_app(config_class=Config):
-    """
-    Factory para criar e configurar a instância da aplicação Flask.
-    """
     app = Flask(__name__)
-    
-    # 1. Carrega a configuração a partir do objeto importado
     app.config.from_object(config_class)
-    
-    # 2. Registra os comandos CLI
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+
+    from app.models import database
+
     register_commands(app)
 
     return app
