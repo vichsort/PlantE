@@ -2,7 +2,7 @@ import click
 from flask import current_app
 from .services.plant_id_service import PlantIdService
 from .services.gemini_service import GeminiService
-from .utils.helpers import encode_image_to_base64
+from .utils.base64_utils import encode_image_to_base64
 
 def register_commands(app):
     """Registra os comandos de linha de comando na aplicação Flask."""

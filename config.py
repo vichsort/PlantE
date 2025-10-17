@@ -6,8 +6,10 @@ load_dotenv()
 class Config:
     """Configurações da aplicação carregadas do ambiente."""
 
-    PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+
+    PLANT_ID_API_KEY = os.getenv('PLANT_ID_API_KEY')
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
     DB_USER = os.environ.get('DB_USER')
     DB_PASSWORD = os.environ.get('DB_PASSWORD')
