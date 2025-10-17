@@ -1,8 +1,7 @@
-# app/__init__.py
 from flask import Flask
 from config import Config
 from .cli import register_commands
-from .extensions import db, migrate, jwt, redis_client
+from .extensions import db, migrate, jwt
 import redis
 
 def create_app(config_class=Config):
@@ -12,7 +11,7 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    redis_client = redis.from_url(app.config['REDIS_URL'], decode_responses=True)
+    app.redis_client = redis.from_url(app.config['REDIS_URL'], decode_responses=True)
     
     from app.models import database
 

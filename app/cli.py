@@ -3,9 +3,41 @@ from flask import current_app
 from .services.plant_id_service import PlantIdService
 from .services.gemini_service import GeminiService
 from .utils.base64_utils import encode_image_to_base64
+import redis
 
 def register_commands(app):
     """Registra os comandos de linha de comando na aplicação Flask."""
+
+    @app.cli.command("test-redis")
+    def test_redis_connection():
+        """
+        Envia um comando 'PING' para o Redis para testar a conexão.
+        """
+        click.echo("⚡ Tentando se conectar ao Redis Cloud...")
+        try:
+            # ACESSO CORRETO:
+            # Pegamos o cliente do 'current_app' já inicializado
+            client = current_app.redis_client 
+            
+            resposta = client.ping() # <<< Agora 'client' não é None
+            
+            if resposta:
+                click.secho(f"\n✅ Conexão bem-sucedida!", fg='green', bold=True)
+                click.echo(f"   - Resposta do servidor: {resposta}")
+            else:
+                click.secho("\n❌ Conexão falhou (mas sem erro). Resposta inesperada.", fg='red')
+
+        except redis.exceptions.AuthenticationError:
+            click.secho("\n❌ ERRO DE AUTENTICAÇÃO!", fg='red', bold=True)
+            click.echo("   - Verifique sua REDIS_PASSWORD no arquivo .env.")
+        except redis.exceptions.ConnectionError as e:
+            # AGORA SIM, AQUI ENTRA A REDE EDUROAM!
+            click.secho("\n❌ ERRO DE CONEXÃO!", fg='red', bold=True)
+            click.echo("   - Verifique seu REDIS_ENDPOINT e REDIS_PORT no .env.")
+            click.echo("   - SE ESTIVEREM CERTOS, a rede (eduroam?) pode estar bloqueando a porta.")
+            click.echo(f"   - Detalhe: {e}")
+        except Exception as e:
+            click.secho(f"\n❌ Um erro inesperado ocorreu: {e}", fg='red', bold=True)
 
     @app.cli.command("analyze")
     @click.argument("image_path")
