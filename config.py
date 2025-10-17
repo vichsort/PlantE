@@ -16,6 +16,15 @@ class Config:
     DB_HOST = os.environ.get('DB_HOST')
     DB_PORT = os.environ.get('DB_PORT')
     DB_NAME = os.environ.get('DB_NAME')
+
+    REDIS_USER = os.getenv('REDIS_USER')
+    REDIS_PASSWORD = os.getenv('REDIS_PASSWORD')
+    REDIS_ENDPOINT = os.getenv('REDIS_ENDPOINT')
+    REDIS_PORT = os.getenv('REDIS_PORT')
+
+    REDIS_URL = (
+        f"redis://{REDIS_USER}:{REDIS_PASSWORD}@{REDIS_ENDPOINT}:{REDIS_PORT}/0"
+    )
     
     SQLALCHEMY_DATABASE_URI = (
         f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

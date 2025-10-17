@@ -1,6 +1,5 @@
 from flask import jsonify
 
-
 def make_success_response(data, message, status_code=200):
     return jsonify({
         "status": "success",
