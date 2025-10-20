@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from celery.schedules import crontab
 
 load_dotenv()
 
@@ -30,6 +31,18 @@ class Config:
         f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+
+    CELERYBEAT_SCHEDULE = {
+        'check-watering-every-morning': {
+            # O 'name' da tarefa que vamos criar em 'tasks.py'
+            'task': 'tasks.check_all_plants_for_watering',
+            # 'schedule': crontab(minute='*/1') # <<< Para testar: roda a cada 1 minuto
+            'schedule': crontab(hour=8, minute=0), # Para produção: todo dia às 8h da manhã
+        },
+    }
 
     if not PLANT_ID_API_KEY or not GEMINI_API_KEY:
         raise ValueError("As chaves de API (PLANT_ID_API_KEY, GEMINI_API_KEY) não foram encontradas no arquivo .env")
