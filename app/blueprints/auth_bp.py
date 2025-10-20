@@ -3,7 +3,8 @@ from app.models.database import User
 from app.extensions import db
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.exceptions import BadRequest, Unauthorized, Conflict, NotFound
-from app.utils.response_utils import make_success_response, make_error_response 
+from app.utils.response_utils import make_success_response, make_error_response
+from datetime import datetime
 
 auth_bp = Blueprint('auth_bp', __name__, url_prefix='/api/v1/auth')
 
@@ -23,21 +24,24 @@ def register():
 
         new_user = User(email=email)
         new_user.set_password(password)
-        
+      
         db.session.add(new_user)
         db.session.commit()
 
         return make_success_response(
-            data={"user_id": new_user.id},
+            data={"user_id": str(new_user.id)}, # Retorna o ID como string
             message="Usuário registrado com sucesso.",
             status_code=201
         )
     except BadRequest as e:
+        db.session.rollback() # Garante rollback em caso de erro
         return make_error_response(str(e), "BAD_REQUEST", 400)
     except Conflict as e:
+        db.session.rollback()
         return make_error_response(str(e), "EMAIL_IN_USE", 409)
     except Exception as e:
-        return make_error_response("Ocorreu um erro interno.", "INTERNAL_SERVER_ERROR", 500)
+        db.session.rollback()
+        return make_error_response("Ocorreu um erro interno durante o registro.", "INTERNAL_SERVER_ERROR", 500)
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -67,10 +71,8 @@ def login():
     except Unauthorized as e:
         return make_error_response(str(e), "INVALID_CREDENTIALS", 401)
     except Exception as e:
-        return make_error_response("Ocorreu um erro interno.", "INTERNAL_SERVER_ERROR", 500)
+        return make_error_response("Ocorreu um erro interno durante o login.", "INTERNAL_SERVER_ERROR", 500)
 
-
-# --- NOVOS ENDPOINTS DE FCM TOKEN ---
 
 @auth_bp.route('/fcm-token', methods=['POST'])
 @jwt_required()
@@ -89,22 +91,26 @@ def update_fcm_token():
 
         user = User.query.get(current_user_id)
         if not user:
-            raise NotFound("Usuário não encontrado.") # Segurança extra
+            # Isso não deveria acontecer se o token JWT for válido, mas é uma segurança extra.
+            raise NotFound("Usuário associado ao token não encontrado.") 
 
         user.fcm_token = fcm_token
+        user.fcm_token_updated_at = datetime.utcnow() # Atualiza a data
         db.session.commit()
 
         return make_success_response(
-            data=None,
+            data=None, # Não precisa retornar nada no sucesso
             message="Token do dispositivo atualizado com sucesso."
         )
     except BadRequest as e:
+        db.session.rollback()
         return make_error_response(str(e), "BAD_REQUEST", 400)
     except NotFound as e:
-        return make_error_response(str(e), "NOT_FOUND", 404)
+        db.session.rollback()
+        return make_error_response(str(e), "NOT_FOUND", 404) # Embora improvável
     except Exception as e:
         db.session.rollback()
-        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+        return make_error_response(f"Ocorreu um erro interno ao atualizar o token: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
 
 
 @auth_bp.route('/fcm-token', methods=['DELETE'])
@@ -118,9 +124,10 @@ def remove_fcm_token():
         user = User.query.get(current_user_id)
 
         if not user:
-            raise NotFound("Usuário não encontrado.")
+            raise NotFound("Usuário associado ao token não encontrado.")
 
         user.fcm_token = None
+        user.fcm_token_updated_at = None # Limpa a data também
         db.session.commit()
 
         return make_success_response(
@@ -128,7 +135,8 @@ def remove_fcm_token():
             message="Token do dispositivo desvinculado com sucesso."
         )
     except NotFound as e:
+        db.session.rollback()
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
         db.session.rollback()
-        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+        return make_error_response(f"Ocorreu um erro interno ao desvincular o token: {str(e)}", "INTERNAL_SERVER_ERROR", 500)

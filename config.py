@@ -44,6 +44,11 @@ class Config:
             'schedule': crontab(minute='*/1') # <<< Para testar: roda a cada 1 minuto
             # 'schedule': crontab(hour=8, minute=0), # <<< Para produção: todo dia às 8h da manhã
         },
+        'check-stale-fcm-tokens-weekly': {
+            'task': 'tasks.check_stale_fcm_tokens',
+            # Roda todo Domingo às 3 da manhã
+            'schedule': crontab(day_of_week=0, hour=3, minute=0), 
+        },
     }
 
     if not PLANT_ID_API_KEY or not GEMINI_API_KEY:
