@@ -14,7 +14,6 @@ def create_app(config_class=Config):
     app.redis_client = redis.from_url(app.config['REDIS_URL'], decode_responses=True)
     
     from app.models import database
-    from . import tasks
 
     # --- REGISTRO DOS BLUEPRINTS ---
     from .blueprints.auth_bp import auth_bp

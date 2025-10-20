@@ -23,7 +23,7 @@ def check_all_plants_for_watering():
         ).filter(
             UserPlant.tracked_watering == True,    # 1. Só as plantas monitoradas
             User.fcm_token.isnot(None),            # 2. Só usuários com token de push
-            PlantGuide.details_cache.isnot(None)   # 3. Só plantas que já têm dados do Gemini
+            # PlantGuide.details_cache.isnot(None)   # 3. Só plantas que já têm dados do Gemini
         ).all()
 
         print(f"--- [CELERY BEAT]: Encontradas {len(plants_to_check)} plantas para verificar.")

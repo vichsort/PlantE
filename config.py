@@ -35,12 +35,14 @@ class Config:
     CELERY_BROKER_URL = REDIS_URL
     CELERY_RESULT_BACKEND = REDIS_URL
 
+    CELERY_INCLUDE = ['app.tasks']
+
     CELERYBEAT_SCHEDULE = {
         'check-watering-every-morning': {
             # O 'name' da tarefa que vamos criar em 'tasks.py'
             'task': 'tasks.check_all_plants_for_watering',
-            # 'schedule': crontab(minute='*/1') # <<< Para testar: roda a cada 1 minuto
-            'schedule': crontab(hour=8, minute=0), # Para produção: todo dia às 8h da manhã
+            'schedule': crontab(minute='*/1') # <<< Para testar: roda a cada 1 minuto
+            # 'schedule': crontab(hour=8, minute=0), # <<< Para produção: todo dia às 8h da manhã
         },
     }
 
