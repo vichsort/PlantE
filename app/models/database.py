@@ -12,6 +12,15 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     fcm_token = db.Column(db.Text, nullable=True)
+    fcm_token_updated_at = db.Column(db.DateTime, nullable=True)
+    subscription_status = db.Column(
+        db.String(30), 
+        nullable=False, 
+        default='free',  # Valores: 'free', 'premium', 'trial'
+        server_default='free'
+    )
+    subscription_expires_at = db.Column(db.DateTime, nullable=True) # Para sabermos quando o 'premium' expira
+    watering_streak = db.Column(db.Integer, default=0, nullable=False)
     
     # Relacionamento: Um usuário pode ter muitas plantas em seu jardim.
     garden = db.relationship('UserPlant', back_populates='owner', lazy='dynamic', cascade="all, delete-orphan")
