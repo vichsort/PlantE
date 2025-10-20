@@ -23,7 +23,6 @@ def _get_guide_data(entity_id, scientific_name):
     """
     
     # 1. Tenta o cache rápido (Redis)
-    # CORREÇÃO: Acessa o cliente via 'current_app'
     cached_guide = current_app.redis_client.get(f"guide:{entity_id}")
     if cached_guide:
         return json.loads(cached_guide)
@@ -64,12 +63,12 @@ def _get_guide_data(entity_id, scientific_name):
     return plant_guide_data
 
 
-@garden_bp.route('/analyze', methods=['POST'])
+@garden_bp.route('/identify', methods=['POST'])
 @jwt_required()
-def analyze_and_add_plant():
+def identify_and_add_plant():
     """
-    Endpoint principal: recebe uma imagem, analisa, busca em caches,
-    consulta APIs externas se necessário, e adiciona a planta ao jardim do usuário.
+    Endpoint de identificação: recebe uma imagem, identifica (Plant.id),
+    e adiciona a planta ao jardim do usuário com dados mínimos.
     """
     try:
         current_user_id = get_jwt_identity()
@@ -86,9 +85,15 @@ def analyze_and_add_plant():
         entity_id = best_match['details']['entity_id']
         scientific_name = best_match['name']
 
-        # --- 2. Lógica de Cache e Busca de Dados ---
-        # Usa a função auxiliar para manter o código limpo
-        plant_guide_data = _get_guide_data(entity_id, scientific_name)
+        # --- 2. Adicionar ao Guia Global (se não existir) ---
+        guide_from_db = PlantGuide.query.get(entity_id)
+        if not guide_from_db:
+            guide_from_db = PlantGuide(
+                entity_id=entity_id,
+                scientific_name=scientific_name
+                # Os caches 'details', 'nutritional', 'health' começam como NULL
+            )
+            db.session.add(guide_from_db)
 
         # --- 3. Adicionar ao Jardim do Usuário ---
         user_plant = UserPlant.query.filter_by(user_id=current_user_id, plant_entity_id=entity_id).first()
@@ -97,6 +102,7 @@ def analyze_and_add_plant():
                 user_id=current_user_id,
                 plant_entity_id=entity_id,
                 nickname=scientific_name # Um apelido padrão
+                # 'tracked_watering' será False por padrão (definido no modelo)
             )
             db.session.add(user_plant)
         
@@ -106,11 +112,12 @@ def analyze_and_add_plant():
         final_response = {
             "user_plant_id": user_plant.id,
             "nickname": user_plant.nickname,
-            "identification": identification,
-            "guide_data": plant_guide_data
+            "scientific_name": scientific_name,
+            "tracked_watering": user_plant.tracked_watering, # <-- Adicionado
+            "identification_data": identification # Retorna os dados do Plant.id
         }
         
-        return make_success_response(final_response, "Planta analisada e adicionada ao seu jardim.")
+        return make_success_response(final_response, "Planta identificada e adicionada ao seu jardim.", 201)
 
     except BadRequest as e:
         return make_error_response(str(e), "BAD_REQUEST", 400)
@@ -133,7 +140,8 @@ def get_user_plants():
             "id": plant.id,
             "nickname": plant.nickname,
             "scientific_name": plant.plant_info.scientific_name,
-            "last_watered": plant.last_watered.isoformat() if plant.last_watered else None
+            "last_watered": plant.last_watered.isoformat() if plant.last_watered else None,
+            "tracked_watering": plant.tracked_watering  # <-- ADICIONADO
         })
         
     return make_success_response(plants_list, "Jardim carregado com sucesso.")
@@ -145,23 +153,27 @@ def get_plant_details(plant_id):
     try:
         current_user_id = get_jwt_identity()
         
-        # Busca a planta e já valida se ela pertence ao usuário logado
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
             raise NotFound("Planta não encontrada no seu jardim.")
 
         # Busca os dados do guia (do cache ou db)
-        guide_data = _get_guide_data(user_plant.plant_entity_id, user_plant.plant_info.scientific_name)
+        guide_from_db = PlantGuide.query.get(user_plant.plant_entity_id)
 
         # Monta a resposta completa
         response_data = {
             "id": user_plant.id,
             "nickname": user_plant.nickname,
+            "scientific_name": user_plant.plant_info.scientific_name,
             "added_at": user_plant.added_at.isoformat(),
             "last_watered": user_plant.last_watered.isoformat() if user_plant.last_watered else None,
             "care_notes": user_plant.care_notes,
-            "guide_data": guide_data
+            "tracked_watering": user_plant.tracked_watering,
+            # Adiciona os booleanos 'has_' para o Flutter
+            "has_details": guide_from_db.details_cache is not None,
+            "has_nutritional": guide_from_db.nutritional_cache is not None
+            # "has_health_info": guide_from_db.health_cache is not None (quando adicionarmos)
         }
         
         return make_success_response(response_data, "Detalhes da planta carregados.")
@@ -179,7 +191,6 @@ def update_plant_details(plant_id):
     try:
         current_user_id = get_jwt_identity()
         
-        # Busca a planta e valida a posse
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
@@ -187,12 +198,11 @@ def update_plant_details(plant_id):
             
         data = request.get_json()
         
-        # Atualiza apenas os campos permitidos
+        # Atualiza apenas os campos permitidos (não 'tracked_watering')
         if 'nickname' in data:
             user_plant.nickname = data['nickname']
         
         if 'last_watered' in data:
-            # Converte a string ISO (que o Flutter vai mandar) para datetime
             user_plant.last_watered = datetime.fromisoformat(data['last_watered']) if data['last_watered'] else None
         
         if 'care_notes' in data:
@@ -205,7 +215,8 @@ def update_plant_details(plant_id):
             "id": user_plant.id,
             "nickname": user_plant.nickname,
             "last_watered": user_plant.last_watered.isoformat() if user_plant.last_watered else None,
-            "care_notes": user_plant.care_notes
+            "care_notes": user_plant.care_notes,
+            "tracked_watering": user_plant.tracked_watering # Retorna o estado atual
         }
         
         return make_success_response(response_data, "Planta atualizada com sucesso.")
@@ -226,18 +237,66 @@ def delete_plant(plant_id):
     try:
         current_user_id = get_jwt_identity()
         
-        # Busca a planta e valida a posse
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
             raise NotFound("Planta não encontrada no seu jardim.")
         
-        # Remove a planta do jardim
         db.session.delete(user_plant)
         db.session.commit()
         
         return make_success_response(None, "Planta removida do seu jardim com sucesso.")
 
+    except NotFound as e:
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        db.session.rollback()
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+    
+@garden_bp.route('/plants/<uuid:plant_id>/track-watering', methods=['POST'])
+@jwt_required()
+def track_plant_watering(plant_id):
+    """Ativa o monitoramento de rega para uma planta específica."""
+    try:
+        current_user_id = get_jwt_identity()
+        user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
+        
+        if not user_plant:
+            raise NotFound("Planta não encontrada no seu jardim.")
+        
+        user_plant.tracked_watering = True
+        db.session.commit()
+        
+        return make_success_response(
+            {"tracked_watering": user_plant.tracked_watering},
+            "Monitoramento de rega ativado."
+        )
+        
+    except NotFound as e:
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        db.session.rollback()
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+
+@garden_bp.route('/plants/<uuid:plant_id>/track-watering', methods=['DELETE'])
+@jwt_required()
+def untrack_plant_watering(plant_id):
+    """Desativa o monitoramento de rega para uma planta específica."""
+    try:
+        current_user_id = get_jwt_identity()
+        user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
+        
+        if not user_plant:
+            raise NotFound("Planta não encontrada no seu jardim.")
+        
+        user_plant.tracked_watering = False
+        db.session.commit()
+        
+        return make_success_response(
+            {"tracked_watering": user_plant.tracked_watering},
+            "Monitoramento de rega desativado."
+        )
+        
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
