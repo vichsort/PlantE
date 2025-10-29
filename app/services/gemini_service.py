@@ -1,6 +1,16 @@
 from google import genai
 from ..models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
 
+
+# O que falta ser feito
+
+# guardar imagens da identificação no bd
+# guardar histórico de consultas do usuário no bd
+# permitir mais uma imagem da mesma planta
+# endpoint do acompanhamento de plantas
+# endpoint do acompanhamento do crescimento
+# colocar certo o rate limiting
+
 class GeminiService:
     def __init__(self, api_key: str):
         self.client = genai.Client(api_key=api_key)

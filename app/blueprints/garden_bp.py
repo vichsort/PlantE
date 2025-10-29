@@ -22,12 +22,12 @@ def _get_guide_data(entity_id, scientific_name):
     Esta função NÃO dá commit no db.session.
     """
     
-    # 1. Tenta o cache rápido (Redis)
+    # Tenta no Redis
     cached_guide = current_app.redis_client.get(f"guide:{entity_id}")
     if cached_guide:
         return json.loads(cached_guide)
 
-    # 2. Tenta o cache permanente (PostgreSQL)
+    # Tenta no Postgres
     guide_from_db = PlantGuide.query.get(entity_id)
     if guide_from_db:
         plant_guide_data = {
@@ -77,15 +77,22 @@ def identify_and_add_plant():
 
         if not image_b64:
             raise BadRequest("A imagem (em base64) é obrigatória.")
+        
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
 
-        # --- 1. Identificação da Planta (API Externa) ---
+        # --- Identificação da Planta (API Externa) ---
         plant_service = PlantIdService(api_key=current_app.config['PLANT_ID_API_KEY'])
-        identification = plant_service.identify_plant(image_b64)
+        identification = plant_service.identify_plant(
+            image_base64=image_b64,
+            latitude=latitude,
+            longitude=longitude
+        )
         best_match = identification['result']['classification']['suggestions'][0]
         entity_id = best_match['details']['entity_id']
         scientific_name = best_match['name']
 
-        # --- 2. Adicionar ao Guia Global (se não existir) ---
+        # --- Adicionar ao Guia Global (se não existir) ---
         guide_from_db = PlantGuide.query.get(entity_id)
         if not guide_from_db:
             guide_from_db = PlantGuide(
@@ -95,7 +102,7 @@ def identify_and_add_plant():
             )
             db.session.add(guide_from_db)
 
-        # --- 3. Adicionar ao Jardim do Usuário ---
+        # --- Adicionar ao Jardim do Usuário ---
         user_plant = UserPlant.query.filter_by(user_id=current_user_id, plant_entity_id=entity_id).first()
         if not user_plant:
             user_plant = UserPlant(
@@ -108,12 +115,12 @@ def identify_and_add_plant():
         
         db.session.commit()
 
-        # --- 4. Montar a Resposta Final ---
+        # --- Resposta Final ---
         final_response = {
             "user_plant_id": user_plant.id,
             "nickname": user_plant.nickname,
             "scientific_name": scientific_name,
-            "tracked_watering": user_plant.tracked_watering, # <-- Adicionado
+            "tracked_watering": user_plant.tracked_watering,
             "identification_data": identification # Retorna os dados do Plant.id
         }
         
@@ -134,14 +141,13 @@ def get_user_plants():
     user = User.query.get(current_user_id)
     
     plants_list = []
-    # Usar .all() aqui é mais explícito
     for plant in user.garden.all():
         plants_list.append({
             "id": plant.id,
             "nickname": plant.nickname,
             "scientific_name": plant.plant_info.scientific_name,
             "last_watered": plant.last_watered.isoformat() if plant.last_watered else None,
-            "tracked_watering": plant.tracked_watering  # <-- ADICIONADO
+            "tracked_watering": plant.tracked_watering
         })
         
     return make_success_response(plants_list, "Jardim carregado com sucesso.")

@@ -43,25 +43,33 @@ class PlantIdService:
             raise Exception(f"Erro inesperado na requisição: {e}")
 
     # =====================================================
-    # 1️⃣ IDENTIFICAÇÃO DA PLANTA
+    # IDENTIFICAÇÃO DA PLANTA
     # =====================================================
-    def identify_plant(self, image_base64: str) -> dict:
+    def identify_plant(self, image_base64: str, latitude: float = None, longitude: float = None) -> dict:
         """Envia imagem para identificação da planta."""
         payload = {
             "images": [image_base64],
             "similar_images": True
         }
 
+        if latitude is not None and longitude is not None:
+            payload["latitude"] = latitude
+            payload["longitude"] = longitude
+
         return self._make_request("POST", "identification", payload)
 
     # =====================================================
-    # 2️⃣ AVALIAÇÃO DE SAÚDE
+    # AVALIAÇÃO DE SAÚDE
     # =====================================================
-    def assess_health(self, image_base64: str) -> dict:
+    def assess_health(self, image_base64: str, latitude: float = None, longitude: float = None) -> dict:
         """Avalia a saúde da planta (detecta doenças)."""
         payload = {
             "images": [image_base64],
             "health": True
         }
+
+        if latitude is not None and longitude is not None:
+            payload["latitude"] = latitude
+            payload["longitude"] = longitude
 
         return self._make_request("POST", "health_assessment", payload)
