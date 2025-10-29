@@ -93,7 +93,6 @@ def identify_and_add_plant():
         scientific_name = best_match['name']
         image_url_from_plantid = identification.get('input', {}).get('images', [None])[0]
 
-        # --- Adicionar ao Guia Global (se não existir) ---
         guide_from_db = PlantGuide.query.get(entity_id)
         if not guide_from_db:
             guide_from_db = PlantGuide(
