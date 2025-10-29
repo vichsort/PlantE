@@ -49,6 +49,7 @@ class UserPlant(db.Model):
     last_watered = db.Column(db.DateTime)
     care_notes = db.Column(db.Text)
     tracked_watering = db.Column(db.Boolean, default=False, nullable=False)
+    primary_image_url = db.Column(db.String(512), nullable=True)
     
     # Chaves Estrangeiras que conectam tudo
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False)

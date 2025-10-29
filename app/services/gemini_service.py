@@ -5,7 +5,6 @@ from ..models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
 # O que falta ser feito
 
 # guardar imagens da identificação no bd
-# guardar histórico de consultas do usuário no bd
 # permitir mais uma imagem da mesma planta
 # endpoint do acompanhamento de plantas
 # endpoint do acompanhamento do crescimento

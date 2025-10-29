@@ -38,7 +38,7 @@ def _get_guide_data(entity_id, scientific_name):
         current_app.redis_client.set(f"guide:{entity_id}", json.dumps(plant_guide_data), ex=CACHE_TTL)
         return plant_guide_data
 
-    # 3. Cache MISS total: busca no Gemini
+    # Cache MISS total: busca no Gemini
     gemini_service = GeminiService(api_key=current_app.config['GEMINI_API_KEY'])
     details = gemini_service.get_details_about_plant(scientific_name)
     nutritional = gemini_service.get_nutritional_details(scientific_name)
@@ -91,13 +91,15 @@ def identify_and_add_plant():
         best_match = identification['result']['classification']['suggestions'][0]
         entity_id = best_match['details']['entity_id']
         scientific_name = best_match['name']
+        image_url_from_plantid = identification.get('input', {}).get('images', [None])[0]
 
         # --- Adicionar ao Guia Global (se não existir) ---
         guide_from_db = PlantGuide.query.get(entity_id)
         if not guide_from_db:
             guide_from_db = PlantGuide(
                 entity_id=entity_id,
-                scientific_name=scientific_name
+                scientific_name=scientific_name,
+                primary_image_url=image_url_from_plantid
                 # Os caches 'details', 'nutritional', 'health' começam como NULL
             )
             db.session.add(guide_from_db)
