@@ -39,6 +39,7 @@ class PlantGuide(db.Model):
     last_gemini_update = db.Column(db.DateTime)
     details_cache = db.Column(JSONB)
     nutritional_cache = db.Column(JSONB)
+    health_cache = db.Column(JSONB, nullable=True)
 
 class UserPlant(db.Model):
     __tablename__ = 'user_garden'

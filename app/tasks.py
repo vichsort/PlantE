@@ -205,3 +205,53 @@ def check_stale_fcm_tokens():
             print(f"--- [CELERY BEAT - Stale Check]: ERRO na verificação de tokens antigos: {e} ---")
         finally:
             db.session.remove()
+
+@shared_task(name="tasks.enrich_health_data_task", bind=True, max_retries=3, default_retry_delay=300)
+def enrich_health_data_task(self, entity_id: str, scientific_name: str, disease_name: str, user_id_to_notify: str):
+    """
+    TAREFA DISPARADA SOB DEMANDA: Busca o plano de tratamento de doença no Gemini.
+    """
+    print(f"--- [CELERY WORKER - Health]: Buscando plano de tratamento para {disease_name} em {scientific_name} ---")
+    
+    try:
+        with current_app.app_context():
+            guide = PlantGuide.query.get(entity_id)
+            if not guide:
+                print(f"--- [CELERY WORKER - Health]: PlantGuide {entity_id} não encontrado. Abortando.")
+                return
+
+            if guide.health_cache and guide.health_cache.get('disease_name') == disease_name:
+                print(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} já existe. Abortando.")
+                return
+
+            gemini_service = GeminiService(api_key=current_app.config['GEMINI_API_KEY'])
+            treatment_plan = gemini_service.get_disease_treatment_plan(scientific_name, disease_name)
+            
+            health_data = treatment_plan.model_dump()
+
+            guide.health_cache = health_data
+            guide.last_gemini_update = datetime.utcnow()
+            db.session.commit()
+
+            print(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} salvo com sucesso. ---")
+            
+            # user = User.query.get(user_id_to_notify)
+            # if user and user.fcm_token:
+            #     send_push_notification.delay(
+            #         fcm_token=user.fcm_token, 
+            #         title="Plano de Saúde Pronto!", 
+            #         body=f"O plano de tratamento para '{disease_name}' na sua {scientific_name} está pronto."
+            #     )
+
+    except Exception as exc:
+        print(f"--- [CELERY WORKER - Health]: ERRO ao buscar plano de tratamento: {exc} ---")
+        try:
+             self.retry(exc=exc)
+        except self.MaxRetriesExceededError:
+            print(f"--- [CELERY WORKER - Health]: MÁXIMO DE TENTATIVAS ATINGIDO para {entity_id}. Desistindo. ---")
+        finally:
+             with current_app.app_context():
+                db.session.remove()
+    finally:
+         with current_app.app_context():
+            db.session.remove()

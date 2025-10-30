@@ -5,7 +5,7 @@ def make_celery(app):
     """
     Função 'factory' para criar e configurar a instância do Celery.
     """
-    # 1. Configura o Celery com o Broker e Backend do config.py do Flask
+    # Configura o Celery com o Broker e Backend do config.py do Flask
     celery = Celery(
         app.import_name,
         backend=app.config['CELERY_RESULT_BACKEND'],
