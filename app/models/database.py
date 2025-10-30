@@ -7,20 +7,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 class User(db.Model):
     __tablename__ = 'users'
     
+    # identificação básica
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # para as notificações push
     fcm_token = db.Column(db.Text, nullable=True)
     fcm_token_updated_at = db.Column(db.DateTime, nullable=True)
+
+    # Relativos ao freemium
     subscription_status = db.Column(
         db.String(30), 
         nullable=False, 
         default='free',  # Valores: 'free', 'premium', 'trial'
         server_default='free'
     )
-    subscription_expires_at = db.Column(db.DateTime, nullable=True) # Para sabermos quando o 'premium' expira
+    subscription_expires_at = db.Column(db.DateTime, nullable=True)
+
+    # gamificação - futuro
     watering_streak = db.Column(db.Integer, default=0, nullable=False)
+
+    # profile
+    bio = db.Column(db.Text, nullable=True)
+    profile_picture_url = db.Column(db.String(512), nullable=True) 
+    country = db.Column(db.String(100), nullable=True)
+    state = db.Column(db.String(100), nullable=True)
     
     # Relacionamento: Um usuário pode ter muitas plantas em seu jardim.
     garden = db.relationship('UserPlant', back_populates='owner', lazy='dynamic', cascade="all, delete-orphan")

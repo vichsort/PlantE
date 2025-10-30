@@ -9,6 +9,7 @@ from app.utils.response_utils import make_success_response, make_error_response
 from app.utils.security_utils import check_daily_limit
 from app.tasks import enrich_plant_details_task, enrich_health_data_task
 from datetime import datetime
+from app.utils.location_utils import get_fallback_location
 
 # Define o tempo de vida do cache em segundos (7 dias)
 CACHE_TTL = 60 * 60 * 24 * 7
@@ -63,6 +64,9 @@ def identify_and_add_plant():
     """
     try:
         current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+        if not user:
+             raise NotFound("Usuário não encontrado.")
         data = request.get_json()
         
         image_b64 = data.get('image')
@@ -71,6 +75,20 @@ def identify_and_add_plant():
         
         latitude = data.get('latitude')
         longitude = data.get('longitude')
+
+        if latitude is None or longitude is None:
+            current_app.logger.info(f"Localização não fornecida. Verificando perfil {user.id}...")
+            
+            # Chama o utilitário, passando o estado do usuário
+            fallback_coords = get_fallback_location(user.state) 
+            
+            latitude = fallback_coords['lat']
+            longitude = fallback_coords['lon']
+            
+            if user.state:
+                current_app.logger.info(f"Usando fallback para o estado: {user.state}")
+            else:
+                current_app.logger.info("Usuário sem estado, usando fallback padrão (Brasília).")
 
         # Identificação da Planta
         plant_service = PlantIdService(api_key=current_app.config['PLANT_ID_API_KEY'])
