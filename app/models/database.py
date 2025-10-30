@@ -37,6 +37,7 @@ class User(db.Model):
     
     # Relacionamento: Um usuário pode ter muitas plantas em seu jardim.
     garden = db.relationship('UserPlant', back_populates='owner', lazy='dynamic', cascade="all, delete-orphan")
+    achievements = db.relationship('UserAchievement', back_populates='user', lazy='dynamic', cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
