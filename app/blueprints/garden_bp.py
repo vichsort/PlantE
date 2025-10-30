@@ -9,7 +9,8 @@ from app.utils.response_utils import make_success_response, make_error_response
 from app.utils.security_utils import check_daily_limit
 from app.tasks import enrich_plant_details_task, enrich_health_data_task
 from datetime import datetime
-from app.utils.achievement_utils import grant_achievement_if_not_exists, update_watering_streak
+from app.utils.achievement_utils import grant_achievement_if_not_exists
+from app.tasks import update_watering_streak
 from app.utils.location_utils import get_fallback_location
 
 
