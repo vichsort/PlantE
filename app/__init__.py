@@ -18,6 +18,9 @@ def create_app(config_class=Config):
     from .blueprints.auth_bp import auth_bp
     app.register_blueprint(auth_bp)
 
+    from .blueprints.profile_bp import profile_bp
+    app.register_blueprint(profile_bp)
+
     from .blueprints.garden_bp import garden_bp
     app.register_blueprint(garden_bp)
     
