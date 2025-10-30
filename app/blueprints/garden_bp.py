@@ -5,8 +5,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.models.database import User, PlantGuide, UserPlant
 from app.services.plant_id_service import PlantIdService
-from app.services.gemini_service import GeminiService
 from app.utils.response_utils import make_success_response, make_error_response
+from app.utils.security_utils import check_daily_limit
+from app.tasks import enrich_plant_details_task, enrich_health_data_task
 from datetime import datetime
 
 # Define o tempo de vida do cache em segundos (7 dias)
@@ -15,143 +16,143 @@ CACHE_TTL = 60 * 60 * 24 * 7
 garden_bp = Blueprint('garden_bp', __name__, url_prefix='/api/v1/garden')
 
 
-def _get_guide_data(entity_id, scientific_name):
+def _get_guide_data(entity_id: str) -> dict | None:
     """
-    Função auxiliar interna para buscar dados do guia botânico,
-    seguindo a lógica de cache (Redis -> Postgres -> Gemini).
-    Esta função NÃO dá commit no db.session.
+    Função auxiliar "burra": busca dados do guia botânico APENAS
+    no cache (Redis -> Postgres). Retorna None se não encontrar.
+    NÃO CHAMA O GEMINI.
     """
     
     # Tenta no Redis
-    cached_guide = current_app.redis_client.get(f"guide:{entity_id}")
-    if cached_guide:
-        return json.loads(cached_guide)
+    try:
+        cached_guide = current_app.redis_client.get(f"guide:{entity_id}")
+        if cached_guide:
+            return json.loads(cached_guide)
+    except Exception as e:
+        current_app.logger.error(f"Erro ao acessar o cache Redis: {e}")
+        # Continua para o DB se o Redis falhar
 
     # Tenta no Postgres
     guide_from_db = PlantGuide.query.get(entity_id)
-    if guide_from_db:
+    
+    # Verifica se os caches no DB estão preenchidos
+    if guide_from_db and guide_from_db.details_cache and guide_from_db.nutritional_cache:
         plant_guide_data = {
             "details": guide_from_db.details_cache,
             "nutritional": guide_from_db.nutritional_cache
         }
-        # Re-popula o cache do Redis
-        current_app.redis_client.set(f"guide:{entity_id}", json.dumps(plant_guide_data), ex=CACHE_TTL)
+        
+        # Re-popula o cache do Redis (se falhou ou estava vazio)
+        try:
+            current_app.redis_client.set(f"guide:{entity_id}", json.dumps(plant_guide_data), ex=CACHE_TTL)
+        except Exception as e:
+            current_app.logger.error(f"Erro ao repopular o cache Redis: {e}")
+
         return plant_guide_data
-
-    # Cache MISS total: busca no Gemini
-    gemini_service = GeminiService(api_key=current_app.config['GEMINI_API_KEY'])
-    details = gemini_service.get_details_about_plant(scientific_name)
-    nutritional = gemini_service.get_nutritional_details(scientific_name)
-
-    plant_guide_data = {
-        "details": details.model_dump(),
-        "nutritional": nutritional.model_dump()
-    }
-
-    # Salva no PostgreSQL
-    new_guide = PlantGuide(
-        entity_id=entity_id,
-        scientific_name=scientific_name,
-        details_cache=plant_guide_data["details"],
-        nutritional_cache=plant_guide_data["nutritional"]
-    )
-    db.session.add(new_guide)
     
-    # Salva no Redis
-    current_app.redis_client.set(f"guide:{entity_id}", json.dumps(plant_guide_data), ex=CACHE_TTL)
-    
-    return plant_guide_data
+    # Cache MISS total (ou caches do DB estão vazios)
+    return None
 
 
 @garden_bp.route('/identify', methods=['POST'])
 @jwt_required()
 def identify_and_add_plant():
     """
-    Endpoint de identificação: recebe uma imagem, identifica (Plant.id),
-    e adiciona a planta ao jardim do usuário com dados mínimos.
+    Endpoint de identificação: recebe imagem e localização (opcional),
+    identifica, salva a URL da imagem e adiciona ao jardim.
     """
     try:
         current_user_id = get_jwt_identity()
         data = request.get_json()
+        
         image_b64 = data.get('image')
-
         if not image_b64:
             raise BadRequest("A imagem (em base64) é obrigatória.")
         
         latitude = data.get('latitude')
         longitude = data.get('longitude')
 
-        # --- Identificação da Planta (API Externa) ---
+        # Identificação da Planta
         plant_service = PlantIdService(api_key=current_app.config['PLANT_ID_API_KEY'])
-        identification = plant_service.identify_plant(
-            image_base64=image_b64,
-            latitude=latitude,
-            longitude=longitude
-        )
+        identification = plant_service.identify_plant(image_b64, latitude, longitude)
+        
         best_match = identification['result']['classification']['suggestions'][0]
         entity_id = best_match['details']['entity_id']
         scientific_name = best_match['name']
+        
+        # Extrai a URL da imagem do Plant.id
         image_url_from_plantid = identification.get('input', {}).get('images', [None])[0]
 
+        # Salva no Guia Global (se não existir)
         guide_from_db = PlantGuide.query.get(entity_id)
         if not guide_from_db:
             guide_from_db = PlantGuide(
                 entity_id=entity_id,
-                scientific_name=scientific_name,
-                primary_image_url=image_url_from_plantid
-                # Os caches 'details', 'nutritional', 'health' começam como NULL
+                scientific_name=scientific_name
+                # Caches 'details', 'nutritional', 'health' começam como NULL
             )
             db.session.add(guide_from_db)
 
-        # --- Adicionar ao Jardim do Usuário ---
+        # Salva no Jardim do Usuário
         user_plant = UserPlant.query.filter_by(user_id=current_user_id, plant_entity_id=entity_id).first()
         if not user_plant:
             user_plant = UserPlant(
                 user_id=current_user_id,
                 plant_entity_id=entity_id,
-                nickname=scientific_name # Um apelido padrão
-                # 'tracked_watering' será False por padrão (definido no modelo)
+                nickname=scientific_name,
+                primary_image_url=image_url_from_plantid
             )
             db.session.add(user_plant)
+        else:
+            # Se já tem a planta, atualiza a imagem principal
+            user_plant.primary_image_url = image_url_from_plantid
         
         db.session.commit()
 
-        # --- Resposta Final ---
         final_response = {
             "user_plant_id": user_plant.id,
             "nickname": user_plant.nickname,
             "scientific_name": scientific_name,
             "tracked_watering": user_plant.tracked_watering,
-            "identification_data": identification # Retorna os dados do Plant.id
+            "primary_image_url": user_plant.primary_image_url,
+            "identification_data": identification
         }
         
         return make_success_response(final_response, "Planta identificada e adicionada ao seu jardim.", 201)
 
     except BadRequest as e:
+        db.session.rollback()
         return make_error_response(str(e), "BAD_REQUEST", 400)
     except Exception as e:
         db.session.rollback()
-        return make_error_response(f"Ocorreu um erro interno ao processar a planta: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+        current_app.logger.error(f"Erro em /identify: {e}")
+        return make_error_response(f"Ocorreu um erro interno ao processar a planta.", "INTERNAL_SERVER_ERROR", 500)
 
 
 @garden_bp.route('/plants', methods=['GET'])
 @jwt_required()
 def get_user_plants():
     """Retorna todas as plantas do jardim do usuário."""
-    current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
-    
-    plants_list = []
-    for plant in user.garden.all():
-        plants_list.append({
-            "id": plant.id,
-            "nickname": plant.nickname,
-            "scientific_name": plant.plant_info.scientific_name,
-            "last_watered": plant.last_watered.isoformat() if plant.last_watered else None,
-            "tracked_watering": plant.tracked_watering
-        })
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
         
-    return make_success_response(plants_list, "Jardim carregado com sucesso.")
+        plants_list = []
+        for plant in user.garden.all():
+            plants_list.append({
+                "id": plant.id,
+                "nickname": plant.nickname,
+                "scientific_name": plant.plant_info.scientific_name,
+                "last_watered": plant.last_watered.isoformat() if plant.last_watered else None,
+                "tracked_watering": plant.tracked_watering,
+                "primary_image_url": plant.primary_image_url 
+            })
+            
+        return make_success_response(plants_list, "Jardim carregado com sucesso.")
+    except Exception as e:
+        current_app.logger.error(f"Erro em /plants: {e}")
+        return make_error_response("Erro ao carregar o jardim.", "INTERNAL_SERVER_ERROR", 500)
+
 
 @garden_bp.route('/plants/<uuid:plant_id>', methods=['GET'])
 @jwt_required()
@@ -159,36 +160,33 @@ def get_plant_details(plant_id):
     """Busca os detalhes de uma planta específica no jardim do usuário."""
     try:
         current_user_id = get_jwt_identity()
-        
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
             raise NotFound("Planta não encontrada no seu jardim.")
 
-        # Busca os dados do guia (do cache ou db)
-        guide_from_db = PlantGuide.query.get(user_plant.plant_entity_id)
+        guide_from_db = user_plant.plant_info
 
-        # Monta a resposta completa
         response_data = {
             "id": user_plant.id,
             "nickname": user_plant.nickname,
-            "scientific_name": user_plant.plant_info.scientific_name,
+            "scientific_name": guide_from_db.scientific_name,
             "added_at": user_plant.added_at.isoformat(),
             "last_watered": user_plant.last_watered.isoformat() if user_plant.last_watered else None,
             "care_notes": user_plant.care_notes,
             "tracked_watering": user_plant.tracked_watering,
-            # Adiciona os booleanos 'has_' para o Flutter
+            "primary_image_url": user_plant.primary_image_url,
             "has_details": guide_from_db.details_cache is not None,
-            "has_nutritional": guide_from_db.nutritional_cache is not None
-            # "has_health_info": guide_from_db.health_cache is not None (quando adicionarmos)
+            "has_nutritional": guide_from_db.nutritional_cache is not None,
+            "has_health_info": guide_from_db.health_cache is not None
         }
         
         return make_success_response(response_data, "Detalhes da planta carregados.")
-
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
-        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+        current_app.logger.error(f"Erro em /plants/<id>: {e}")
+        return make_error_response(f"Ocorreu um erro interno.", "INTERNAL_SERVER_ERROR", 500)
 
 
 @garden_bp.route('/plants/<uuid:plant_id>', methods=['PUT'])
@@ -197,7 +195,6 @@ def update_plant_details(plant_id):
     """Atualiza os dados de uma planta no jardim do usuário (apelido, notas, etc.)."""
     try:
         current_user_id = get_jwt_identity()
-        
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
@@ -205,35 +202,31 @@ def update_plant_details(plant_id):
             
         data = request.get_json()
         
-        # Atualiza apenas os campos permitidos (não 'tracked_watering')
         if 'nickname' in data:
             user_plant.nickname = data['nickname']
-        
         if 'last_watered' in data:
             user_plant.last_watered = datetime.fromisoformat(data['last_watered']) if data['last_watered'] else None
-        
         if 'care_notes' in data:
             user_plant.care_notes = data['care_notes']
             
         db.session.commit()
         
-        # Retorna os dados atualizados
         response_data = {
             "id": user_plant.id,
             "nickname": user_plant.nickname,
             "last_watered": user_plant.last_watered.isoformat() if user_plant.last_watered else None,
             "care_notes": user_plant.care_notes,
-            "tracked_watering": user_plant.tracked_watering # Retorna o estado atual
+            "tracked_watering": user_plant.tracked_watering
         }
         
         return make_success_response(response_data, "Planta atualizada com sucesso.")
-
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except (ValueError, TypeError):
         return make_error_response("Formato de data inválido para 'last_watered'. Use o formato ISO.", "BAD_REQUEST", 400)
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Erro em PUT /plants/<id>: {e}")
         return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
 
 
@@ -243,7 +236,6 @@ def delete_plant(plant_id):
     """Remove uma planta do jardim do usuário."""
     try:
         current_user_id = get_jwt_identity()
-        
         user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
         
         if not user_plant:
@@ -253,11 +245,11 @@ def delete_plant(plant_id):
         db.session.commit()
         
         return make_success_response(None, "Planta removida do seu jardim com sucesso.")
-
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Erro em DELETE /plants/<id>: {e}")
         return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
     
 @garden_bp.route('/plants/<uuid:plant_id>/track-watering', methods=['POST'])
@@ -278,7 +270,6 @@ def track_plant_watering(plant_id):
             {"tracked_watering": user_plant.tracked_watering},
             "Monitoramento de rega ativado."
         )
-        
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
@@ -303,9 +294,118 @@ def untrack_plant_watering(plant_id):
             {"tracked_watering": user_plant.tracked_watering},
             "Monitoramento de rega desativado."
         )
-        
     except NotFound as e:
         return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
         db.session.rollback()
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+
+
+# --- ENDPOINTS PREMIUM ---
+
+@garden_bp.route('/plants/<uuid:plant_id>/analyze-deep', methods=['POST'])
+@jwt_required()
+@check_daily_limit(limit=3)
+def trigger_deep_analysis(plant_id):
+    """
+    Aciona o worker Celery para buscar detalhes e dados nutricionais (Gemini).
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
+        
+        if not user_plant:
+            raise NotFound("Planta não encontrada no seu jardim.")
+        
+        guide = user_plant.plant_info
+        
+        if guide.details_cache and guide.nutritional_cache:
+            return make_success_response(None, "Análise profunda já concluída.", 200)
+
+        # Dispara a tarefa assíncrona
+        enrich_plant_details_task.delay(
+            entity_id=guide.entity_id,
+            scientific_name=guide.scientific_name
+        )
+        
+        return make_success_response(None, "Solicitação de análise profunda recebida. Você será notificado.", 202)
+
+    except NotFound as e:
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        current_app.logger.error(f"Erro em /analyze-deep: {e}")
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+
+
+@garden_bp.route('/plants/<uuid:plant_id>/analyze-health', methods=['POST'])
+@jwt_required()
+@check_daily_limit(limit=3)
+def trigger_health_analysis(plant_id):
+    """
+    Recebe UMA NOVA imagem, faz avaliação no Plant.id e dispara 
+    worker do Gemini se encontrar doença.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        image_b64 = data.get('image')
+
+        if not image_b64:
+            raise BadRequest("A imagem (em base64) é obrigatória para análise de saúde.")
+        
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+
+        user_plant = UserPlant.query.filter_by(id=plant_id, user_id=current_user_id).first()
+        if not user_plant:
+            raise NotFound("Planta não encontrada no seu jardim.")
+            
+        guide = user_plant.plant_info
+        
+        plant_service = PlantIdService(api_key=current_app.config['PLANT_ID_API_KEY'])
+        health_assessment = plant_service.assess_health(image_b64, latitude, longitude)
+
+        diseases = health_assessment.get('result', {}).get('disease', {}).get('suggestions', [])
+        
+        high_prob_disease = None
+        for disease in diseases:
+            if disease.get('probability', 0) > 0.2:
+                high_prob_disease = disease
+                break
+        
+        if not high_prob_disease:
+            return make_success_response(
+                {"health_assessment": health_assessment, "status": "HEALTHY"},
+                "Análise de saúde concluída. Nenhuma doença provável detectada."
+            )
+
+        disease_name = high_prob_disease['name']
+
+        if guide.health_cache and guide.health_cache.get('disease_name') == disease_name:
+             return make_success_response(
+                {"health_assessment": health_assessment, "status": "COMPLETED", "cached_plan": guide.health_cache},
+                "Plano de tratamento para esta doença já foi gerado."
+            )
+        
+        # Dispara o Worker Celery
+        enrich_health_data_task.delay(
+            entity_id=guide.entity_id,
+            scientific_name=guide.scientific_name,
+            disease_name=disease_name,
+            user_id_to_notify=current_user_id
+        )
+        
+        return make_success_response(
+            {"health_assessment": health_assessment, "status": "PENDING_TREATMENT_PLAN"},
+            "Doença detectada. Estamos preparando seu plano de tratamento.",
+            status_code=202
+        )
+
+    except BadRequest as e:
+        return make_error_response(str(e), "BAD_REQUEST", 400)
+    except NotFound as e:
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro em /analyze-health: {e}")
         return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)

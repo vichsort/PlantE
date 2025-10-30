@@ -4,13 +4,13 @@ from app.extensions import db
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.exceptions import BadRequest, Unauthorized, Conflict, NotFound
 from app.utils.response_utils import make_success_response, make_error_response
-from datetime import datetime
+from datetime import datetime, timedelta
 
 auth_bp = Blueprint('auth_bp', __name__, url_prefix='/api/v1/auth')
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Endpoint para registrar um novo usuário."""
+    """Endpoint para registrar um novo usuário (começa como 'free' por padrão)."""
     try:
         data = request.get_json()
         if not data or not data.get('email') or not data.get('password'):
@@ -24,7 +24,8 @@ def register():
 
         new_user = User(email=email)
         new_user.set_password(password)
-      
+        # subscription_status usará o 'default' do modelo (free)
+        
         db.session.add(new_user)
         db.session.commit()
 
@@ -63,7 +64,7 @@ def login():
         access_token = create_access_token(identity=str(user.id))
 
         return make_success_response(
-            data={"token": access_token},
+            data={"token": access_token, "subscription_status": user.subscription_status},
             message="Login bem-sucedido."
         )
     except BadRequest as e:
@@ -79,7 +80,6 @@ def login():
 def update_fcm_token():
     """
     Atualiza o token FCM (push notification) do usuário logado.
-    O app Flutter deve chamar isso após o login ou ao reativar notificações.
     """
     try:
         current_user_id = get_jwt_identity()
@@ -91,7 +91,6 @@ def update_fcm_token():
 
         user = User.query.get(current_user_id)
         if not user:
-            # Isso não deveria acontecer se o token JWT for válido, mas é uma segurança extra.
             raise NotFound("Usuário associado ao token não encontrado.") 
 
         user.fcm_token = fcm_token
@@ -99,7 +98,7 @@ def update_fcm_token():
         db.session.commit()
 
         return make_success_response(
-            data=None, # Não precisa retornar nada no sucesso
+            data=None,
             message="Token do dispositivo atualizado com sucesso."
         )
     except BadRequest as e:
@@ -107,7 +106,7 @@ def update_fcm_token():
         return make_error_response(str(e), "BAD_REQUEST", 400)
     except NotFound as e:
         db.session.rollback()
-        return make_error_response(str(e), "NOT_FOUND", 404) # Embora improvável
+        return make_error_response(str(e), "NOT_FOUND", 404)
     except Exception as e:
         db.session.rollback()
         return make_error_response(f"Ocorreu um erro interno ao atualizar o token: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
@@ -140,3 +139,63 @@ def remove_fcm_token():
     except Exception as e:
         db.session.rollback()
         return make_error_response(f"Ocorreu um erro interno ao desvincular o token: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+
+@auth_bp.route('/upgrade-to-premium', methods=['POST'])
+@jwt_required()
+def upgrade_to_premium():
+    """
+    (TESTE) Atualiza o usuário logado para o status 'premium' por 30 dias.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+
+        if not user:
+            raise NotFound("Usuário associado ao token não encontrado.")
+
+        user.subscription_status = 'premium'
+        user.subscription_expires_at = datetime.utcnow() + timedelta(days=30)
+        db.session.commit()
+
+        return make_success_response(
+            data={
+                "subscription_status": user.subscription_status,
+                "expires_at": user.subscription_expires_at.isoformat()
+            },
+            message="Usuário atualizado para Premium com sucesso."
+        )
+    except NotFound as e:
+        db.session.rollback()
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        db.session.rollback()
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
+
+
+@auth_bp.route('/revert-to-free', methods=['POST'])
+@jwt_required()
+def revert_to_free():
+    """
+    (TESTE) Reverte o usuário logado para o status 'free'.
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+
+        if not user:
+            raise NotFound("Usuário associado ao token não encontrado.")
+
+        user.subscription_status = 'free'
+        user.subscription_expires_at = None
+        db.session.commit()
+
+        return make_success_response(
+            data={"subscription_status": user.subscription_status},
+            message="Usuário revertido para Free com sucesso."
+        )
+    except NotFound as e:
+        db.session.rollback()
+        return make_error_response(str(e), "NOT_FOUND", 404)
+    except Exception as e:
+        db.session.rollback()
+        return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
