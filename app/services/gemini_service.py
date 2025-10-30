@@ -7,7 +7,6 @@ from app.utils.security_utils import check_daily_limit
 # permitir mais uma imagem da mesma planta
 # endpoint do acompanhamento de plantas
 # endpoint do acompanhamento do crescimento
-# colocar certo o rate limiting
 
 class GeminiService:
     def __init__(self, api_key: str):

@@ -1,6 +1,5 @@
 from flask import Flask
 from config import Config
-from .cli import register_commands
 from .extensions import db, migrate, jwt
 import redis
 
@@ -21,7 +20,5 @@ def create_app(config_class=Config):
 
     from .blueprints.garden_bp import garden_bp
     app.register_blueprint(garden_bp)
-
-    register_commands(app)
     
     return app

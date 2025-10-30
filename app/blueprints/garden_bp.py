@@ -178,7 +178,12 @@ def get_plant_details(plant_id):
             "primary_image_url": user_plant.primary_image_url,
             "has_details": guide_from_db.details_cache is not None,
             "has_nutritional": guide_from_db.nutritional_cache is not None,
-            "has_health_info": guide_from_db.health_cache is not None
+            "has_health_info": guide_from_db.health_cache is not None,
+            
+            # para o flutter / json de guide
+            "guide_details": guide_from_db.details_cache,
+            "guide_nutritional": guide_from_db.nutritional_cache,
+            "guide_health": guide_from_db.health_cache
         }
         
         return make_success_response(response_data, "Detalhes da planta carregados.")
