@@ -72,3 +72,31 @@ class UserPlant(db.Model):
     # Relacionamentos
     owner = db.relationship('User', back_populates='garden')
     plant_info = db.relationship('PlantGuide')
+
+class Achievement(db.Model):
+    __tablename__ = 'achievements'
+    
+    id = db.Column(db.String(50), primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    icon_name = db.Column(db.String(50), nullable=True)
+    
+    # Relacionamento (quantos usuários ganharam esta conquista)
+    users = db.relationship('UserAchievement', back_populates='achievement')
+
+class UserAchievement(db.Model):
+    __tablename__ = 'user_achievements'
+    
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    earned_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Chaves Estrangeiras
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), nullable=False, index=True)
+    achievement_id = db.Column(db.String(50), db.ForeignKey('achievements.id'), nullable=False, index=True)
+    
+    # Relacionamentos de volta
+    user = db.relationship('User', back_populates='achievements')
+    achievement = db.relationship('Achievement', back_populates='users')
+    
+    # Garante que um usuário só possa ganhar cada conquista uma vez
+    __table_args__ = (db.UniqueConstraint('user_id', 'achievement_id', name='_user_achievement_uc'),)

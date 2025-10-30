@@ -49,6 +49,10 @@ class Config:
             # Roda todo Domingo às 3 da manhã
             'schedule': crontab(day_of_week=0, hour=3, minute=0), 
         },
+        'check-user-longevity-daily': {
+            'task': 'tasks.check_user_longevity',
+            'schedule': crontab(hour=4, minute=0), # Todo dia às 4h da manhã
+        }
     }
 
     if not PLANT_ID_API_KEY or not GEMINI_API_KEY:

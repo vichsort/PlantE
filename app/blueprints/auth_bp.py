@@ -4,6 +4,7 @@ from app.extensions import db
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.exceptions import BadRequest, Unauthorized, Conflict, NotFound
 from app.utils.response_utils import make_success_response, make_error_response
+from app.utils.achievement_utils import grant_achievement_if_not_exists
 from datetime import datetime, timedelta
 
 auth_bp = Blueprint('auth_bp', __name__, url_prefix='/api/v1/auth')
@@ -155,6 +156,7 @@ def upgrade_to_premium():
 
         user.subscription_status = 'premium'
         user.subscription_expires_at = datetime.utcnow() + timedelta(days=30)
+        grant_achievement_if_not_exists(user, 'premium_user')
         db.session.commit()
 
         return make_success_response(

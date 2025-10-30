@@ -9,7 +9,9 @@ from app.utils.response_utils import make_success_response, make_error_response
 from app.utils.security_utils import check_daily_limit
 from app.tasks import enrich_plant_details_task, enrich_health_data_task
 from datetime import datetime
+from app.utils.achievement_utils import grant_achievement_if_not_exists, update_watering_streak
 from app.utils.location_utils import get_fallback_location
+
 
 # Define o tempo de vida do cache em segundos (7 dias)
 CACHE_TTL = 60 * 60 * 24 * 7
@@ -67,8 +69,7 @@ def identify_and_add_plant():
         user = User.query.get(current_user_id)
         if not user:
              raise NotFound("Usuário não encontrado.")
-        data = request.get_json()
-        
+        data = request.get_json() 
         image_b64 = data.get('image')
         if not image_b64:
             raise BadRequest("A imagem (em base64) é obrigatória.")
@@ -110,6 +111,16 @@ def identify_and_add_plant():
                 # Caches 'details', 'nutritional', 'health' começam como NULL
             )
             db.session.add(guide_from_db)
+
+        user_plant = UserPlant.query.filter_by(user_id=current_user_id, plant_entity_id=entity_id).first()
+        if not user_plant:
+            # --- LÓGICA DE CONQUISTA ---
+            # Verifica o número de plantas ANTES de adicionar a nova
+            plant_count = user.garden.count()
+            if plant_count == 0:
+                grant_achievement_if_not_exists(user, 'first_plant')
+            if plant_count == 9:
+                grant_achievement_if_not_exists(user, 'ten_plants')
 
         # Salva no Jardim do Usuário
         user_plant = UserPlant.query.filter_by(user_id=current_user_id, plant_entity_id=entity_id).first()
@@ -231,6 +242,11 @@ def update_plant_details(plant_id):
             user_plant.last_watered = datetime.fromisoformat(data['last_watered']) if data['last_watered'] else None
         if 'care_notes' in data:
             user_plant.care_notes = data['care_notes']
+
+        if 'last_watered' in data:
+            user_plant.last_watered = datetime.fromisoformat(data['last_watered']) if data['last_watered'] else None
+            # Dispara um worker para recalcular o streak e conceder badges
+            update_watering_streak.delay(user_id=current_user_id)
             
         db.session.commit()
         
@@ -348,7 +364,8 @@ def trigger_deep_analysis(plant_id):
         # Dispara a tarefa assíncrona
         enrich_plant_details_task.delay(
             entity_id=guide.entity_id,
-            scientific_name=guide.scientific_name
+            scientific_name=guide.scientific_name,
+            user_id_to_notify=current_user_id
         )
         
         return make_success_response(None, "Solicitação de análise profunda recebida. Você será notificado.", 202)
