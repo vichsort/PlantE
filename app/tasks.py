@@ -6,6 +6,7 @@ from app.services.gemini_service import GeminiService
 import json
 from datetime import datetime, timedelta
 from app.utils.achievement_utils import grant_achievement_if_not_exists
+from app.services.push_notification_service import send_push_to_token
 
 # Define o tempo de vida do cache que será usado pela task de enrich
 DEFAULT_CACHE_TTL = 60 * 60 * 24 * 7 # 7 dias
@@ -51,6 +52,18 @@ def enrich_plant_details_task(self, entity_id, scientific_name, user_id_to_notif
                 grant_achievement_if_not_exists(user, 'first_deep_analysis')
 
             db.session.commit()
+
+            user = User.query.get(user_id_to_notify)
+            if user and user.fcm_token:
+                send_generic_push.delay(
+                    fcm_token=user.fcm_token,
+                    title="Análise Concluída!",
+                    body=f"Os detalhes profundos da sua '{guide.scientific_name}' estão prontos.",
+                    data={
+                        "navigation_type": "plant_detail",
+                        "plant_id": str(user.garden.filter_by(plant_entity_id=guide.entity_id).first().id)
+                    }
+                )
 
             combined_cache_data = {
                 "details": details_dict,
@@ -127,7 +140,8 @@ def check_all_plants_for_watering():
                     print(f"--- [CELERY BEAT]: Planta {plant_display_name} precisa de rega. Disparando notificação.")
                     send_watering_notification.delay(
                         fcm_token=plant.fcm_token,
-                        plant_name=plant_display_name
+                        plant_name=plant_display_name,
+                        plant_id=str(plant.user_plant_id)
                     )
         except Exception as e:
             print(f"--- [CELERY BEAT]: ERRO na verificação diária: {e} ---")
@@ -137,27 +151,24 @@ def check_all_plants_for_watering():
 
 # Envia notificacao
 @shared_task(name="tasks.send_watering_notification")
-def send_watering_notification(fcm_token, plant_name):
+def send_watering_notification(fcm_token, plant_name, plant_id: str):
     """
     MICRO-TAREFA: Envia uma notificação de rega e trata erros FCM.
     """
     with current_app.app_context():
         try:
-            title = "Plante - Lembrete de Rega 💧"
+            title = "Plante - Lembrete de Rega"
             body = f"Sua planta '{plant_name}' está com sede! Não se esqueça de regá-la."
+
+            navigation_data = {
+                "navigation_type": "plant_detail",
+                "plant_id": plant_id
+            }
             
             print(f"--- [CELERY WORKER - Push]: ENVIANDO PUSH para {fcm_token[:10]}... sobre '{plant_name}' ---")
-            # Exemplo:
-            # push_service = PushNotificationService() 
-            # try:
-            #     push_service.send(fcm_token, title, body) 
-            # except UnregisteredError as e: # Captura o erro específico de token inválido
-            #     print(f"--- [CELERY WORKER - Push]: Token {fcm_token[:10]}... inválido (Unregistered). Disparando invalidação.")
-            #     invalidate_fcm_token.delay(fcm_token_to_remove=fcm_token)
-            # except InvalidArgumentError as e: # Outro erro comum de token mal formatado
-            #     print(f"--- [CELERY WORKER - Push]: Token {fcm_token[:10]}... mal formatado. Disparando invalidação.")
-            #     invalidate_fcm_token.delay(fcm_token_to_remove=fcm_token)
-            # --- Fim da Lógica de Envio ---
+
+            # testando
+            send_push_to_token(fcm_token, title, body, data=navigation_data)
             
         except Exception as e: 
             print(f"--- [CELERY WORKER - Push]: Falha GERAL ao enviar push para {fcm_token[:10]}. Erro: {e} ---")
@@ -245,6 +256,18 @@ def enrich_health_data_task(self, entity_id: str, scientific_name: str, disease_
             guide.last_gemini_update = datetime.utcnow()
             db.session.commit()
 
+            user = User.query.get(user_id_to_notify)
+            if user and user.fcm_token:
+                send_generic_push.delay(
+                    fcm_token=user.fcm_token,
+                    title="Plano de Saúde Pronto!",
+                    body=f"O plano de tratamento para '{disease_name}' na sua '{guide.scientific_name}' está pronto.",
+                    data={
+                        "navigation_type": "plant_detail",
+                        "plant_id": str(user.garden.filter_by(plant_entity_id=guide.entity_id).first().id)
+                    }
+                )
+
             print(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} salvo com sucesso. ---")
             
     except Exception as exc:
@@ -261,6 +284,16 @@ def enrich_health_data_task(self, entity_id: str, scientific_name: str, disease_
          with current_app.app_context():
             db.session.remove()
 
+
+@shared_task(name="tasks.send_generic_push")
+def send_generic_push(fcm_token: str, title: str, body: str, data: dict = None):
+    """Envia uma notificação push genérica."""
+    with current_app.app_context():
+        try:
+            
+            send_push_to_token(fcm_token, title, body, data)
+        except Exception as e:
+            print(f"--- [CELERY WORKER - Push Genérico]: Falha ao enviar push: {e} ---")
 
 # Games
 @shared_task(name="tasks.update_watering_streak", bind=True)
