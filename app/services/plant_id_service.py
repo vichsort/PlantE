@@ -1,3 +1,9 @@
+"""
+Serviço de identificação de plantas
+MAIS DETALHES SOBRE A API ABAIXO:
+https://www.kindwise.com/plant-id
+"""
+
 import requests
 
 class PlantIdService:

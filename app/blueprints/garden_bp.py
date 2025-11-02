@@ -1,3 +1,15 @@
+"""
+Blueprints/rotas às plantas do usuário (seu jardim)
+São:
+(prefixo /api/v1/garden/)
+- /identify -> cria uma planta
+- /plants -> suas plantas
+- /plants/<plant_id> -> vê, edita, tira uma planta
+- /plants/<plant_id>/track-watering -> tira ou coloca tag de busca no celery
+- /plants/<plant_id>/analyze-deep -> pede pro gemini mais detalhes
+- /plants/<plant_id>/analyze-health -> se parecer doente, chama pro gemini ajuda da saude
+"""
+
 import json
 from flask import Blueprint, request, current_app
 from werkzeug.exceptions import BadRequest, NotFound
@@ -18,7 +30,6 @@ from app.utils.location_utils import get_fallback_location
 CACHE_TTL = 60 * 60 * 24 * 7
 
 garden_bp = Blueprint('garden_bp', __name__, url_prefix='/api/v1/garden')
-
 
 def _get_guide_data(entity_id: str) -> dict | None:
     """
@@ -341,7 +352,7 @@ def untrack_plant_watering(plant_id):
         return make_error_response(f"Ocorreu um erro interno: {str(e)}", "INTERNAL_SERVER_ERROR", 500)
 
 
-# --- ENDPOINTS PREMIUM ---
+# ENDPOINTS PREMIUM
 
 @garden_bp.route('/plants/<uuid:plant_id>/analyze-deep', methods=['POST'])
 @jwt_required()

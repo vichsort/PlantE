@@ -1,3 +1,9 @@
+"""
+Terceiriza e centraliza todo tipo de ação relacionada a
+transformar imagens em b64, que é pedido pelo plantid
+e facilita o trabalho do gemini tbm
+"""
+
 import base64
 
 def encode_image_to_base64(image_path: str) -> str:

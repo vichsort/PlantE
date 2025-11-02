@@ -1,3 +1,8 @@
+"""
+Módulo principal do sistema, que compõe e constrói
+todos os itens compostos pela API num nó lugar.
+"""
+
 from flask import Flask
 from config import Config
 from .extensions import db, migrate, jwt
@@ -5,17 +10,20 @@ from .cli import register_commands
 import redis
 
 def create_app(config_class=Config):
+    # CONSTRUÇÃO DO APP
     app = Flask(__name__)
     app.config.from_object(config_class)
     
+    # INICIALIZAÇÃO DO SISTEMA USANDO O AMBIENTE
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
     app.redis_client = redis.from_url(app.config['REDIS_URL'], decode_responses=True)
     
+    # REGISTRO DO DB
     from app.models import database
 
-    # --- REGISTRO DOS BLUEPRINTS ---
+    # REGISTRO DOS BLUEPRINTS
     from .blueprints.auth_bp import auth_bp
     app.register_blueprint(auth_bp)
 
@@ -25,6 +33,7 @@ def create_app(config_class=Config):
     from .blueprints.garden_bp import garden_bp
     app.register_blueprint(garden_bp)
 
+    # REGISTRO DOS COMANDOS DE CLI
     register_commands(app)
     
     return app

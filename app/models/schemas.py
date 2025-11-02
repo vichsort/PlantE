@@ -1,3 +1,15 @@
+"""
+Esquemas do método das respostas do Gemmini, que aceita
+esses padrões e facilita nosso retorno. Cada um desses aqui
+é um campo do JSON que o Gemini nos retorna.
+
+Os sub-schemas funcionam, na prática, como um possibilitador
+de trazer dicionários acoplados na resposta, por que o 
+pydantic não permite usar sub/sub descrições por item como
+o flutter deixa, por exemplo. Os schemas são os organizadores
+de todo o setor.
+"""
+
 from pydantic import BaseModel, Field
 from typing import List
 

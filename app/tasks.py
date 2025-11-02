@@ -1,3 +1,10 @@
+"""
+Sistema agenciador dos processos celery que são marcados
+no redis. Esse sistema cria as tasks do celerybeat, garantindo
+a possibilidade de checar cronologicamente os serviços de tempos
+em tempos de maneira extra-rapida (cache redis)
+"""
+
 import click
 from celery import shared_task
 from flask import current_app

@@ -1,12 +1,11 @@
+"""
+Serviço de requisições para o Gemini.
+Os métodos de perguntas e modelos de resposta não
+são gerenciados aqui, apenas as requisições.
+"""
+
 from google import genai
-from ..models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
-from app.utils.security_utils import check_daily_limit
-
-# O que falta ser feito
-
-# permitir mais uma imagem da mesma planta
-# endpoint do acompanhamento de plantas
-# endpoint do acompanhamento do crescimento
+from models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
 
 class GeminiService:
     def __init__(self, api_key: str):

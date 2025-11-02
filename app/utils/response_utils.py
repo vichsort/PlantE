@@ -1,3 +1,9 @@
+"""
+Utilitário que facilita todos os retornos do sistema para
+que seja padronizado, garantindo mais eficiencia no resultado
+final e facilidade no tratamento posterior por app/site
+"""
+
 from flask import jsonify
 
 def make_success_response(data, message, status_code=200):

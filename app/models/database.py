@@ -1,3 +1,7 @@
+"""
+Modelos dos bancos de dados e seus relacionamentos
+"""
+
 import uuid
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID, JSONB

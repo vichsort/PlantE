@@ -1,3 +1,10 @@
+"""
+Utilitário que cria o sistema de contas 
+gratuitas ou pagas que existirão no futuro.
+Neste módulo é criado o decorator que impõe
+que tarefas são free e que tarefas são premium.
+"""
+
 from functools import wraps
 from flask import current_app
 from flask_jwt_extended import get_jwt_identity
@@ -6,7 +13,7 @@ from app.utils.response_utils import make_error_response
 from datetime import datetime, time, timedelta
 import redis
 
-# --- Expiração ---
+# Expiração
 def get_seconds_until_midnight_utc() -> int:
     """Calcula quantos segundos faltam até a próxima meia-noite UTC."""
     now_utc = datetime.utcnow()

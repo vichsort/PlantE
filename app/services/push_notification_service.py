@@ -1,3 +1,9 @@
+"""
+Serviços agenciadores do firebase messaging
+para permitir mandar as notificações no app
+de maneira controlada
+"""
+
 from firebase_admin import messaging
 from app.tasks import invalidate_fcm_token
 

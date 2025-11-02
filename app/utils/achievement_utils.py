@@ -1,13 +1,6 @@
 """
 Define o catálogo central de todas as conquistas (badges)
 disponíveis no sistema.
-
-Estes dados são usados para popular a tabela 'Achievement' no banco de dados,
-geralmente através de um comando 'seed' (ex: flask seed-achievements).
-
-A lógica para *conceder* estas conquistas aos usuários (ou seja,
-criar entradas na tabela 'UserAchievement') estará em outros
-locais do aplicativo (ex: workers, endpoints de log).
 """
 
 from app.models.database import User, UserAchievement, db
@@ -17,7 +10,7 @@ from flask import current_app
 # Adicionei um 'icon_name' que o Flutter pode usar para exibir
 # um ícone do Material Icons, por exemplo.
 ACHIEVEMENT_DEFINITIONS = {
-    # --- Conquistas de Assinatura ---
+    # Assinatura
     "premium_user": {
         "name": "Apoiador Premium",
         "description": "Obrigado por apoiar o desenvolvimento do Plante!",
@@ -39,7 +32,7 @@ ACHIEVEMENT_DEFINITIONS = {
         "icon_name": "military_tech"
     },
     
-    # --- Conquistas de Longevidade (Tempo de App) ---
+    # Tempo de app
     "user_3_months": {
         "name": "Jardineiro Dedicado",
         "description": "3 meses desde a sua primeira planta.",
@@ -56,7 +49,7 @@ ACHIEVEMENT_DEFINITIONS = {
         "icon_name": "cake"
     },
 
-    # --- Conquistas de Rega (Streak de Cuidado) ---
+    # Streak de rega
     "streak_1_month": {
         "name": "Mão Verde",
         "description": "Manteve seus lembretes de rega em dia por 30 dias.",
@@ -78,7 +71,7 @@ ACHIEVEMENT_DEFINITIONS = {
         "icon_name": "spa"
     },
     
-    # --- Identificações ---
+    # Identificacoes
     "first_plant": {
         "name": "Primeira Folha",
         "description": "Identificou sua primeira planta.",
@@ -119,7 +112,6 @@ def grant_achievement_if_not_exists(user: User, achievement_id: str) -> bool:
     if exists:
         return False # Usuário já possui esta conquista
 
-    # (Opcional) Verifica se a definição da conquista existe
     if achievement_id not in ACHIEVEMENT_DEFINITIONS:
          current_app.logger.warning(f"Tentativa de conceder conquista inválida: {achievement_id} para usuário {user.id}")
          return False
@@ -129,4 +121,4 @@ def grant_achievement_if_not_exists(user: User, achievement_id: str) -> bool:
     new_badge = UserAchievement(user_id=user.id, achievement_id=achievement_id)
     db.session.add(new_badge)
     
-    return True # Nova conquista adicionada à sessão
+    return True

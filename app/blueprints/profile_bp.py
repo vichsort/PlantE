@@ -1,3 +1,11 @@
+"""
+Blueprints/rotas aos dados do perfil
+do usuário. São:
+(prefixo /api/v1/profile/)
+- /me -> vê, edita dados do seu perfil
+- mais virão aqui futuramente.
+"""
+
 from flask import Blueprint, request, current_app
 from app.models.database import User
 from app.extensions import db
@@ -5,7 +13,6 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.exceptions import BadRequest, NotFound
 from app.utils.response_utils import make_success_response, make_error_response
 
-# Cria o Blueprint
 profile_bp = Blueprint('profile_bp', __name__, url_prefix='/api/v1/profile')
 
 @profile_bp.route('/me', methods=['GET'])

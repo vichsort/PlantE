@@ -1,3 +1,8 @@
+"""
+Registro de todos os comandos do terminal que podem ser
+acessados usando o cmd/pws. 
+"""
+
 import click
 from flask import current_app
 from app.extensions import db

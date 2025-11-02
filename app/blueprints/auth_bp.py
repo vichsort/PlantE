@@ -1,3 +1,14 @@
+"""
+Blueprints/rotas relacionados à verificação
+de segurança do usuário. São:
+(prefixo /api/v1/auth/)
+- /register -> cria conta
+- /login -> entra na conta
+- /fc_token -> registra token do push
+- /upgrade-to-premium -> (TEMPORARIO) deixa a conta premium
+- /revert-to-free -> (TEMPORARIO) deixa a conta free
+"""
+
 from flask import Blueprint, request
 from app.models.database import User
 from app.extensions import db
