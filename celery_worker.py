@@ -1,3 +1,8 @@
+"""
+Módulo pai administrador do firebasecli que
+chama as queues de acordo com as suas funções.
+"""
+
 from app import create_app
 from celery import Celery
 import os
@@ -11,7 +16,7 @@ def make_celery(app):
     """
     Função 'factory' para criar e configurar a instância do Celery.
     """
-    # Configura o Celery com o Broker e Backend do config.py do Flask
+
     celery = Celery(
         app.import_name,
         backend=app.config['CELERY_RESULT_BACKEND'],
