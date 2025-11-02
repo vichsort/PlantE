@@ -1,5 +1,13 @@
 # PlantE - Mais que no solo
 
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
+![Flask](https://img.shields.io/badge/Flask-3.0-black.svg)
+![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-orange.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue.svg)
+![Redis](https://img.shields.io/badge/Redis-Cloud-red.svg)
+![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)
+
+API de backend (Flask) para o aplicativo móvel **Plante**. Este serviço gerencia a autenticação de usuários, jardins virtuais, identificação de plantas (via Plant.id), enriquecimento de dados (via Google Gemini), e dispara notificações de cuidado (via Celery/FCM) para uma experiência de cuidado de plantas gamificada e inteligente. <br>
 Este documento detalha os endpoints da API REST do Plante App, construída em Flask.
 
 **URL Base:** `/api/v1`
