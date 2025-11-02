@@ -5,7 +5,7 @@ são gerenciados aqui, apenas as requisições.
 """
 
 from google import genai
-from models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
+from app.models.schemas import PlantInfo, DiseaseInfo, NutritionalInfo
 
 class GeminiService:
     def __init__(self, api_key: str):
