@@ -1,3 +1,4 @@
+import click
 from celery import shared_task
 from flask import current_app
 from app.extensions import db
@@ -10,19 +11,20 @@ from app.utils.achievement_utils import grant_achievement_if_not_exists
 # Define o tempo de vida do cache que será usado pela task de enrich
 DEFAULT_CACHE_TTL = 60 * 60 * 24 * 7 # 7 dias
 
-# Busca no gemini
 @shared_task(name="tasks.enrich_plant_details_task", bind=True, max_retries=3, default_retry_delay=300)
 def enrich_plant_details_task(self, entity_id, scientific_name, user_id_to_notify: str):
     """
-    TAREFA DISPARADA SOB DEMANDA: Busca detalhes no Gemini e atualiza o DB/Redis.
-    Também concede a conquista 'first_deep_analysis'.
+    Busca no Gemini - detalhes da planta.
+    - Atualiza DB
+    - Atualiza Redis
+    - Concede a conquista 'first_deep_analysis'
     """
-    print(f"--- [CELERY WORKER - Enrich]: Iniciando busca de detalhes para {scientific_name} ({entity_id}) ---")
+    click.secho(f"--- [CELERY WORKER - Enrich]: Iniciando busca de detalhes para {scientific_name} ({entity_id}) ---", bold=True)
     try:
         with current_app.app_context():
             guide = PlantGuide.query.get(entity_id)
             if guide and guide.details_cache and guide.nutritional_cache:
-                 print(f"--- [CELERY WORKER - Enrich]: Detalhes para {entity_id} já existem no DB. Abortando.")
+                 click.secho(f"--- [CELERY WORKER - Enrich]: Detalhes para {entity_id} já existem no DB. Abortando.", fg='cyan')
                  return
 
             gemini_service = GeminiService(api_key=current_app.config['GEMINI_API_KEY'])
@@ -52,7 +54,7 @@ def enrich_plant_details_task(self, entity_id, scientific_name, user_id_to_notif
 
             db.session.commit()
 
-            user = User.query.get(user_id_to_notify)
+            user = User.query.get(user_id_to_notify) # Re-busca (ou usa o mesmo)
             if user and user.fcm_token:
                 send_generic_push.delay(
                     fcm_token=user.fcm_token,
@@ -70,15 +72,15 @@ def enrich_plant_details_task(self, entity_id, scientific_name, user_id_to_notif
             }
             current_app.redis_client.set(f"guide:{entity_id}", json.dumps(combined_cache_data), ex=DEFAULT_CACHE_TTL)
             
-            print(f"--- [CELERY WORKER - Enrich]: Detalhes para {entity_id} salvos com sucesso no DB e Redis. ---")
+            click.secho(f"--- [CELERY WORKER - Enrich]: Detalhes para {entity_id} salvos com sucesso no DB e Redis. ---", fg='green')
 
     except Exception as exc:
-        print(f"--- [CELERY WORKER - Enrich]: ERRO ao buscar detalhes para {entity_id}: {exc} ---")
-        db.session.rollback() # Garante rollback em caso de erro
+        click.secho(f"--- [CELERY WORKER - Enrich]: ERRO ao buscar detalhes para {entity_id}: {exc} ---", fg="red")
+        db.session.rollback()
         try:
              self.retry(exc=exc)
         except self.MaxRetriesExceededError:
-            print(f"--- [CELERY WORKER - Enrich]: MÁXIMO DE TENTATIVAS ATINGIDO para {entity_id}. Desistindo. ---")
+            click.secho(f"--- [CELERY WORKER - Enrich]: MÁXIMO DE TENTATIVAS ATINGIDO para {entity_id}. Desistindo. ---", fg="red")
         finally:
              with current_app.app_context():
                 db.session.remove()
@@ -86,14 +88,13 @@ def enrich_plant_details_task(self, entity_id, scientific_name, user_id_to_notif
          with current_app.app_context():
             db.session.remove()
 
-# Verifica rega
 @shared_task(name="tasks.check_all_plants_for_watering")
 def check_all_plants_for_watering():
     """
-    TAREFA PRINCIPAL (agendada pelo Beat): Roda uma vez por dia.
+    Verificação de rega, agendada pelo beat 1x/dia
     Identifica plantas que precisam de rega. Se faltar dados, dispara o 'enrich'.
     """
-    print("--- [CELERY BEAT]: Iniciando verificação diária de rega... ---")
+    click.secho("--- [CELERY BEAT]: Iniciando verificação diária de rega... ---", bold=True, fg='blue')
     
     with current_app.app_context():
         try:
@@ -114,7 +115,7 @@ def check_all_plants_for_watering():
                 User.fcm_token.isnot(None)
             ).all()
 
-            print(f"--- [CELERY BEAT]: Encontradas {len(plants_to_check)} plantas monitoradas para verificar.")
+            click.secho(f"--- [CELERY BEAT]: Encontradas {len(plants_to_check)} plantas monitoradas para verificar.", fg="cyan")
 
             for plant in plants_to_check:
                 frequency_days = None
@@ -123,7 +124,7 @@ def check_all_plants_for_watering():
                     frequency_days = plant.details_cache.get('watering_frequency_days')
 
                 if frequency_days is None:
-                    print(f"--- [CELERY BEAT]: Planta {plant.nickname or plant.scientific_name} ({plant.entity_id}) sem dados de rega. Disparando busca no Gemini.")
+                    click.secho(f"--- [CELERY BEAT]: Planta {plant.nickname or plant.scientific_name} ({plant.entity_id}) sem dados de rega. Disparando busca no Gemini.", fg="yellow")
                     enrich_plant_details_task.delay(
                         entity_id=plant.entity_id, 
                         scientific_name=plant.scientific_name,
@@ -136,14 +137,14 @@ def check_all_plants_for_watering():
                 
                 if datetime.utcnow().date() >= due_date:
                     plant_display_name = plant.nickname or plant.scientific_name
-                    print(f"--- [CELERY BEAT]: Planta {plant_display_name} precisa de rega. Disparando notificação.")
+                    click.secho(f"--- [CELERY BEAT]: Planta {plant_display_name} precisa de rega. Disparando notificação.", fg="green")
                     send_watering_notification.delay(
                         fcm_token=plant.fcm_token,
                         plant_name=plant_display_name,
                         plant_id=str(plant.user_plant_id)
                     )
         except Exception as e:
-            print(f"--- [CELERY BEAT]: ERRO na verificação diária: {e} ---")
+            click.secho(f"--- [CELERY BEAT]: ERRO na verificação diária: {e} ---", fg="red")
             db.session.rollback()
         finally:
             db.session.remove()
@@ -152,7 +153,7 @@ def check_all_plants_for_watering():
 @shared_task(name="tasks.send_watering_notification")
 def send_watering_notification(fcm_token, plant_name, plant_id: str):
     """
-    MICRO-TAREFA: Envia uma notificação de rega e trata erros FCM.
+    Envia uma notificação de rega e trata erros FCM.
     """
     with current_app.app_context():
         try:
@@ -164,36 +165,35 @@ def send_watering_notification(fcm_token, plant_name, plant_id: str):
                 "plant_id": plant_id
             }
             
-            print(f"--- [CELERY WORKER - Push]: ENVIANDO PUSH para {fcm_token[:10]}... sobre '{plant_name}' ---")
+            click.secho(f"--- [CELERY WORKER - Push]: ENVIANDO PUSH para {fcm_token[:10]}... sobre '{plant_name}' ---", bold=True)
 
-            # testando
             from app.services.push_notification_service import send_push_to_token
             send_push_to_token(fcm_token, title, body, data=navigation_data)
             
         except Exception as e: 
-            print(f"--- [CELERY WORKER - Push]: Falha GERAL ao enviar push para {fcm_token[:10]}. Erro: {e} ---")
+            click.secho(f"--- [CELERY WORKER - Push]: Falha GERAL ao enviar push para {fcm_token[:10]}. Erro: {e} ---", fg="red")
 
-# TOKENS
 @shared_task(name="tasks.invalidate_fcm_token", bind=True, max_retries=3, default_retry_delay=60)
 def invalidate_fcm_token(self, fcm_token_to_remove):
     """
-    TAREFA DISPARADA SOB DEMANDA: Define fcm_token = None para um token específico.
+    Define fcm_token = None para um token específico.
     """
-    print(f"--- [CELERY WORKER - Invalidate]: Tentando invalidar token {fcm_token_to_remove[:10]}... ---")
+
+    click.secho(f"--- [CELERY WORKER - Invalidate]: Tentando invalidar token {fcm_token_to_remove[:10]}... ---", bold=True, fg='magenta')
     with current_app.app_context():
         try:
             user = User.query.filter_by(fcm_token=fcm_token_to_remove).first()
             
             if user:
-                print(f"--- [CELERY WORKER - Invalidate]: Token encontrado para user {user.id}. Invalidando.")
+                click.secho(f"--- [CELERY WORKER - Invalidate]: Token encontrado para user {user.id}. Invalidando.", fg='magenta')
                 user.fcm_token = None
                 user.fcm_token_updated_at = None
                 db.session.commit()
             else:
-                print(f"--- [CELERY WORKER - Invalidate]: Token {fcm_token_to_remove[:10]}... não encontrado ou já invalidado.")
+                click.secho(f"--- [CELERY WORKER - Invalidate]: Token {fcm_token_to_remove[:10]}... não encontrado ou já invalidado.", fg='yellow')
                 
         except Exception as exc:
-            print(f"--- [CELERY WORKER - Invalidate]: ERRO ao invalidar token: {exc} ---")
+            click.secho(f"--- [CELERY WORKER - Invalidate]: ERRO ao invalidar token: {exc} ---", fg="red")
             db.session.rollback()
             self.retry(exc=exc)
         finally:
@@ -202,11 +202,12 @@ def invalidate_fcm_token(self, fcm_token_to_remove):
 @shared_task(name="tasks.check_stale_fcm_tokens")
 def check_stale_fcm_tokens():
     """
-    TAREFA AGENDADA (ex: semanal): Busca por tokens FCM que não foram atualizados
+    Busca por tokens FCM que não foram atualizados
     há muito tempo e dispara a invalidação para eles.
     """
-    print("--- [CELERY BEAT - Stale Check]: Iniciando verificação de tokens FCM antigos... ---")
-    STALE_DAYS = 60 # Define o que é "antigo" (ex: 60 dias)
+
+    click.secho("--- [CELERY BEAT - Stale Check]: Iniciando verificação de tokens FCM antigos... ---", bold=True, fg='blue')
+    STALE_DAYS = 60
     
     with current_app.app_context():
         try:
@@ -217,34 +218,33 @@ def check_stale_fcm_tokens():
                 User.fcm_token_updated_at < stale_threshold
             ).all()
 
-            print(f"--- [CELERY BEAT - Stale Check]: Encontrados {len(stale_users)} tokens potencialmente antigos.")
+            click.secho(f"--- [CELERY BEAT - Stale Check]: Encontrados {len(stale_users)} tokens potencialmente antigos.", fg='cyan')
 
             for user in stale_users:
-                print(f"--- [CELERY BEAT - Stale Check]: Token do user {user.id} ({user.fcm_token[:10]}...) parece antigo. Disparando invalidação.")
+                click.secho(f"--- [CELERY BEAT - Stale Check]: Token do user {user.id} ({user.fcm_token[:10]}...) parece antigo. Disparando invalidação.", fg='yellow')
                 invalidate_fcm_token.delay(fcm_token_to_remove=user.fcm_token)
-                    
+                        
         except Exception as e:
-            print(f"--- [CELERY BEAT - Stale Check]: ERRO na verificação de tokens antigos: {e} ---")
+            click.secho(f"--- [CELERY BEAT - Stale Check]: ERRO na verificação de tokens antigos: {e} ---", fg="red")
         finally:
             db.session.remove()
 
-# Saude gemini
 @shared_task(name="tasks.enrich_health_data_task", bind=True, max_retries=3, default_retry_delay=300)
 def enrich_health_data_task(self, entity_id: str, scientific_name: str, disease_name: str, user_id_to_notify: str):
     """
-    TAREFA DISPARADA SOB DEMANDA: Busca o plano de tratamento de doença no Gemini.
+    Busca o plano de tratamento de doença no Gemini.
     """
-    print(f"--- [CELERY WORKER - Health]: Buscando plano de tratamento para {disease_name} em {scientific_name} ---")
+    click.secho(f"--- [CELERY WORKER - Health]: Buscando plano de tratamento para {disease_name} em {scientific_name} ---", bold=True)
     
     try:
         with current_app.app_context():
             guide = PlantGuide.query.get(entity_id)
             if not guide:
-                print(f"--- [CELERY WORKER - Health]: PlantGuide {entity_id} não encontrado. Abortando.")
+                click.secho(f"--- [CELERY WORKER - Health]: PlantGuide {entity_id} não encontrado. Abortando.", fg='yellow')
                 return
 
             if guide.health_cache and guide.health_cache.get('disease_name') == disease_name:
-                print(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} já existe. Abortando.")
+                click.secho(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} já existe. Abortando.", fg='cyan')
                 return
 
             gemini_service = GeminiService(api_key=current_app.config['GEMINI_API_KEY'])
@@ -268,15 +268,15 @@ def enrich_health_data_task(self, entity_id: str, scientific_name: str, disease_
                     }
                 )
 
-            print(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} salvo com sucesso. ---")
+            click.secho(f"--- [CELERY WORKER - Health]: Plano de tratamento para {disease_name} salvo com sucesso. ---", fg='green')
             
     except Exception as exc:
-        print(f"--- [CELERY WORKER - Health]: ERRO ao buscar plano de tratamento: {exc} ---")
+        click.secho(f"--- [CELERY WORKER - Health]: ERRO ao buscar plano de tratamento: {exc} ---", fg="red")
         db.session.rollback()
         try:
              self.retry(exc=exc)
         except self.MaxRetriesExceededError:
-            print(f"--- [CELERY WORKER - Health]: MÁXIMO DE TENTATIVAS ATINGIDO para {entity_id}. Desistindo. ---")
+            click.secho(f"--- [CELERY WORKER - Health]: MÁXIMO DE TENTATIVAS ATINGIDO para {entity_id}. Desistindo. ---", fg="red")
         finally:
              with current_app.app_context():
                 db.session.remove()
@@ -293,16 +293,14 @@ def send_generic_push(fcm_token: str, title: str, body: str, data: dict = None):
             from app.services.push_notification_service import send_push_to_token
             send_push_to_token(fcm_token, title, body, data)
         except Exception as e:
-            print(f"--- [CELERY WORKER - Push Genérico]: Falha ao enviar push: {e} ---")
+            click.secho(f"--- [CELERY WORKER - Push Genérico]: Falha ao enviar push: {e} ---", fg="red")
 
-# Games
 @shared_task(name="tasks.update_watering_streak", bind=True)
 def update_watering_streak(self, user_id: str):
     """
-    (Lógica Simplificada) Recalcula o streak de rega do usuário e concede badges.
-    Disparado após o usuário registrar uma rega (PUT /plants/<id>).
+    Recalcula o streak de rega do usuário e concede badges.
     """
-    print(f"--- [CELERY WORKER - Streak]: Atualizando streak para {user_id} ---")
+    click.secho(f"--- [CELERY WORKER - Streak]: Atualizando streak para {user_id} ---", bold=True, fg='magenta')
     with current_app.app_context():
         try:
             user = User.query.get(user_id)
@@ -312,7 +310,7 @@ def update_watering_streak(self, user_id: str):
             user.watering_streak = (user.watering_streak or 0) + 1
             streak = user.watering_streak
             
-            print(f"--- [CELERY WORKER - Streak]: Novo streak: {streak} dias ---")
+            click.secho(f"--- [CELERY WORKER - Streak]: Novo streak: {streak} dias ---", fg='cyan')
 
             if streak >= 365:
                 grant_achievement_if_not_exists(user, 'streak_1_year')
@@ -326,7 +324,7 @@ def update_watering_streak(self, user_id: str):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f"Erro ao atualizar streak: {e}")
+            click.secho(f"Erro ao atualizar streak: {e}", fg='red')
         finally:
             db.session.remove()
 
@@ -335,11 +333,13 @@ def check_user_longevity():
     """
     TAREFA AGENDADA (ex: diária): Verifica a longevidade do usuário e da assinatura.
     """
-    print("--- [CELERY BEAT - Longevity]: Verificando longevidade dos usuários... ---")
+    click.secho("--- [CELERY BEAT - Longevity]: Verificando longevidade dos usuários... ---", bold=True, fg='blue')
     with current_app.app_context():
         try:
             now = datetime.utcnow()
             users = User.query.all()
+            
+            click.secho(f"--- [CELERY BEAT - Longevity]: Checando {len(users)} usuários...", fg='cyan')
             
             for user in users:
                 days_since_creation = (now - user.created_at).days
@@ -352,7 +352,9 @@ def check_user_longevity():
                 elif days_since_creation >= 90:
                     grant_achievement_if_not_exists(user, 'user_3_months')
 
+                # Concessão de longevidade Premium
                 if user.subscription_status == 'premium' and user.subscription_expires_at:
+                    # (Lógica de exemplo simplificada)
                     days_as_premium = (now - (user.subscription_expires_at - timedelta(days=30))).days
                     if days_as_premium >= 365:
                          grant_achievement_if_not_exists(user, 'premium_1_year')
@@ -362,8 +364,9 @@ def check_user_longevity():
                          grant_achievement_if_not_exists(user, 'premium_3_months')
             
             db.session.commit()
+            click.secho("--- [CELERY BEAT - Longevity]: Verificação concluída.", fg='green')
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f"Erro na verificação de longevidade: {e}")
+            click.secho(f"Erro na verificação de longevidade: {e}", fg='red')
         finally:
             db.session.remove()
