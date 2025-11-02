@@ -7,12 +7,118 @@
 ![Redis](https://img.shields.io/badge/Redis-Cloud-red.svg)
 ![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)
 
-API de backend (Flask) para o aplicativo móvel **Plante**. Este serviço gerencia a autenticação de usuários, jardins virtuais, identificação de plantas (via Plant.id), enriquecimento de dados (via Google Gemini), e dispara notificações de cuidado (via Celery/FCM) para uma experiência de cuidado de plantas gamificada e inteligente. <br>
+API de backend (Flask) para o aplicativo móvel **Plante**. Este serviço gerencia a autenticação de usuários, jardins virtuais, identificação de plantas (via Plant.id), enriquecimento de dados (via Google Gemini), e dispara notificações de cuidado (via Celery/FCM) para uma experiência de cuidado de plantas gamificada e inteligente.  
 Este documento detalha os endpoints da API REST do Plante App, construída em Flask.
 
-**URL Base:** `/api/v1`
+## Instalação
 
-## Autenticação
+### Setup
+
+1. **Clone o Repositório:**
+
+    ```bash
+    git clone https://github.com/vichsort/PlantE.git
+    cd PlantE
+    ```
+
+2. **Crie e Ative o Ambiente Virtual (Venv):**
+
+    ```bash
+    python -m venv .venv
+    # No Windows (CMD/PowerShell):
+    .\.venv\Scripts\activate
+    ```
+
+3. **Instale as Dependências:**
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+### Configuração de Ambiente (O Arquivo `.env`)
+
+Este é o passo mais importante. Crie um arquivo chamado `.env` na raiz do projeto (copie do `.env.example`). Preencha-o com as seguintes informações:
+
+```env
+# Chave secreta para assinar os tokens JWT (use um gerador de string aleatória)
+JWT_SECRET_KEY="SUA_CHAVE_SECRETA_FORTE_AQUI"
+
+# Chaves das APIs Externas
+PLANT_ID_API_KEY="SUA_CHAVE_API_PLANT_ID"
+GEMINI_API_KEY="SUA_CHAVE_API_GEMINI"
+
+# Credenciais do Firebase Admin (APONTE PARA O ARQUIVO .JSON)
+# (Use o caminho absoluto de onde você salvou a chave)
+GOOGLE_APPLICATION_CREDENTIALS="C:/Users/Skcaluno/Documentos/chaves_projeto/plante-firebase-key.json"
+
+# Banco de Dados (NeonDB)
+DB_USER="<seu_usuario_neondb>"
+DB_PASSWORD="<sua_senha_neondb>"
+DB_HOST="<seu_host_neondb_ex: ep-abc-12345.sa-east-1.aws.neon.tech>"
+DB_PORT="5432"
+DB_NAME="<nome_do_seu_banco_neondb>"
+
+# Redis (APONTANDO PARA O SEU NGINX NA EC2)
+REDIS_USER="default"
+REDIS_PASSWORD="<sua_senha_do_redis_cloud>"
+REDIS_ENDPOINT="18.222.231.235" # <<< O IP PÚBLICO DA SUA EC2
+REDIS_PORT="80"                # <<< A porta 80 (que o NGINX está ouvindo)
+
+# Flag de Bypass (Garante que o bypass está DESLIGADO)
+BYPASS_REDIS="false"
+```
+
+### Preparação do Banco de Dados
+
+Com o `.env` configurado, prepare seu NeonDB.
+
+1. **Aplique as Migrações (Crie as tabelas):**
+
+    ```bash
+    flask db upgrade
+    ```
+
+2. **Popule as Conquistas (Seed):**
+
+    ```bash
+    flask seed-achievements
+    ```
+
+### Executando a Aplicação (Os 3 Terminais)
+
+Para rodar o sistema completo localmente, você precisará de **TRÊS** terminais separados, todos com o ambiente virtual (`.venv`) ativado.
+
+**Terminal 1: A API Flask (O "Balcão")**
+*Este comando roda o servidor web. O `--host=0.0.0.0` é **essencial** para que seu celular na rede Wi-Fi possa acessá-lo.*
+
+```bash
+flask run --debug --host=0.0.0.0
+```
+
+**Terminal 2: O Worker Celery (O "Trabalhador")**
+*Este processo executa as tarefas (Gemini, Push, etc.). O `-P gevent` é **essencial** para rodar no Windows.*
+
+```bash
+celery -A celery_worker.celery worker --loglevel=info -P gevent
+```
+
+**Terminal 3: O Celery Beat (O "Despertador")**
+*Este processo agenda as tarefas recorrentes (Rega diária, Limpeza de token semanal).*
+
+```bash
+celery -A celery_worker.celery beat --loglevel=info
+```
+
+**Verificação de Sucesso:**
+
+* O **Terminal 1** deve mostrar que está rodando em `http://0.0.0.0:5000/`.
+* Os **Terminais 2 e 3** devem mostrar uma linha `[INFO/MainProcess] Connected to redis://...` apontando para o IP da sua EC2 na porta 80. Se eles iniciarem sem erros de conexão, você venceu\!
+
+## Endpoints
+
+Todos os endpoints aqui presentes possuem a seguinte **URL Base:** `/api/v1`. Cada um deles possui especificidades e estão documentados com seus valores de entrada e saída.
+
+### Autenticação
 
 Quase todos os endpoints da API são protegidos e exigem um JSON Web Token (JWT).
 
@@ -28,11 +134,11 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
 
 -----
 
-## Blueprint: Auth (`/api/v1/auth`)
+### Blueprint: Auth (`/api/v1/auth`)
 
 *Responsável pelo registro, login e gerenciamento de status do usuário.*
 
-### `POST /auth/register`
+#### `POST /auth/register`
 
 * **Descrição:** Registra um novo usuário no sistema. O usuário é criado com o status `free` por padrão.
 * **Autenticação:** Nenhuma.
@@ -55,7 +161,7 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /auth/login`
+#### `POST /auth/login`
 
 * **Descrição:** Autentica um usuário existente e retorna um token de acesso.
 * **Autenticação:** Nenhuma.
@@ -81,7 +187,7 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /auth/fcm-token`
+#### `POST /auth/fcm-token`
 
 * **Descrição:** Salva ou atualiza o token de notificação push (Firebase Cloud Messaging) do dispositivo do usuário. Essencial para os workers enviarem notificações.
 * **Autenticação:** `JWT Required`
@@ -103,7 +209,7 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `DELETE /auth/fcm-token`
+#### `DELETE /auth/fcm-token`
 
 * **Descrição:** Remove o token FCM do usuário (usado no logout).
 * **Autenticação:** `JWT Required`
@@ -117,11 +223,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /auth/upgrade-to-premium` (TESTE)
+#### `POST /auth/upgrade-to-premium` (TESTE)
 
 * **Descrição:** Endpoint de **teste** para atualizar o usuário logado para o status `premium` por 30 dias.
 * **Autenticação:** `JWT Required`
 * **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -133,11 +240,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /auth/revert-to-free` (TESTE)
+#### `POST /auth/revert-to-free` (TESTE)
 
-  * **Descrição:** Endpoint de **teste** para reverter o usuário logado para o status `free`.
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):**
+* **Descrição:** Endpoint de **teste** para reverter o usuário logado para o status `free`.
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -148,15 +256,16 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
 
 -----
 
-## Blueprint: Garden (`/api/v1/garden`)
+### Blueprint: Garden (`/api/v1/garden`)
 
 *Responsável pelo gerenciamento do jardim virtual do usuário.*
 
-### `POST /identify`
+#### `POST /identify`
 
-  * **Descrição:** Identifica uma planta, cria a entrada no `PlantGuide` (se não existir) e adiciona a planta ao jardim do usuário (`UserPlant`), salvando a URL da imagem de identificação.
-  * **Autenticação:** `JWT Required`
-  * **Corpo da Requisição (JSON):**
+* **Descrição:** Identifica uma planta, cria a entrada no `PlantGuide` (se não existir) e adiciona a planta ao jardim do usuário (`UserPlant`), salvando a URL da imagem de identificação.
+* **Autenticação:** `JWT Required`
+* **Corpo da Requisição (JSON):**
+
     ```json
     {
       "image": "string_base64_da_imagem_comprimida",
@@ -164,7 +273,9 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
       "longitude": -47.9297 // Opcional
     }
     ```
-  * **Resposta (Sucesso `201 Created`):**
+
+* **Resposta (Sucesso `201 Created`):**
+
     ```json
     {
       "status": "success",
@@ -180,11 +291,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `GET /plants`
+#### `GET /plants`
 
-  * **Descrição:** Retorna a lista de todas as plantas (resumidas) no jardim do usuário logado.
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):**
+* **Descrição:** Retorna a lista de todas as plantas (resumidas) no jardim do usuário logado.
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -203,11 +315,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `GET /plants/<uuid:plant_id>`
+#### `GET /plants/<uuid:plant_id>`
 
-  * **Descrição:** Busca os dados completos de uma planta específica no jardim do usuário.
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):**
+* **Descrição:** Busca os dados completos de uma planta específica no jardim do usuário.
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -228,11 +341,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `PUT /plants/<uuid:plant_id>`
+#### `PUT /plants/<uuid:plant_id>`
 
-  * **Descrição:** Atualiza os dados editáveis de uma planta (apelido, notas, última rega).
-  * **Autenticação:** `JWT Required`
-  * **Corpo da Requisição (JSON):**
+* **Descrição:** Atualiza os dados editáveis de uma planta (apelido, notas, última rega).
+* **Autenticação:** `JWT Required`
+* **Corpo da Requisição (JSON):**
+
     ```json
     {
       "nickname": "Samambaia Favorita",
@@ -240,13 +354,15 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
       "care_notes": "Adicionado fertilizante."
     }
     ```
-  * **Resposta (Sucesso `200 OK`):** Retorna os dados atualizados.
 
-### `DELETE /plants/<uuid:plant_id>`
+* **Resposta (Sucesso `200 OK`):** Retorna os dados atualizados.
 
-  * **Descrição:** Remove uma planta do jardim do usuário (não apaga do `PlantGuide`).
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):**
+#### `DELETE /plants/<uuid:plant_id>`
+
+* **Descrição:** Remove uma planta do jardim do usuário (não apaga do `PlantGuide`).
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -255,23 +371,24 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /plants/<uuid:plant_id>/track-watering`
+#### `POST /plants/<uuid:plant_id>/track-watering`
 
-  * **Descrição:** Ativa os lembretes de rega (worker) para esta planta.
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):** `{"data": {"tracked_watering": true}, ...}`
+* **Descrição:** Ativa os lembretes de rega (worker) para esta planta.
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):** `{"data": {"tracked_watering": true}, ...}`
 
-### `DELETE /plants/<uuid:plant_id>/track-watering`
+#### `DELETE /plants/<uuid:plant_id>/track-watering`
 
-  * **Descrição:** Desativa os lembretes de rega para esta planta.
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):** `{"data": {"tracked_watering": false}, ...}`
+* **Descrição:** Desativa os lembretes de rega para esta planta.
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):** `{"data": {"tracked_watering": false}, ...}`
 
-### `POST /plants/<uuid:plant_id>/analyze-deep`
+#### `POST /plants/<uuid:plant_id>/analyze-deep`
 
-  * **Descrição:** **Recurso Premium (Limitado).** Dispara o worker Celery assíncrono para buscar detalhes e dados nutricionais do Gemini.
-  * **Autenticação:** `JWT Required`, `check_daily_limit(limit=3)`
-  * **Resposta (Sucesso `202 Accepted`):**
+* **Descrição:** **Recurso Premium (Limitado).** Dispara o worker Celery assíncrono para buscar detalhes e dados nutricionais do Gemini.
+* **Autenticação:** `JWT Required`, `check_daily_limit(limit=3)`
+* **Resposta (Sucesso `202 Accepted`):**
+
     ```json
     {
       "status": "success",
@@ -280,11 +397,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `POST /plants/<uuid:plant_id>/analyze-health`
+#### `POST /plants/<uuid:plant_id>/analyze-health`
 
-  * **Descrição:** **Recurso Premium (Limitado).** Recebe uma *nova imagem* da planta, faz a avaliação de saúde no Plant.id e, se encontrar doença, dispara o worker Celery para buscar o plano de tratamento no Gemini.
-  * **Autenticação:** `JWT Required`, `check_daily_limit(limit=3)`
-  * **Corpo da Requisição (JSON):**
+* **Descrição:** **Recurso Premium (Limitado).** Recebe uma *nova imagem* da planta, faz a avaliação de saúde no Plant.id e, se encontrar doença, dispara o worker Celery para buscar o plano de tratamento no Gemini.
+* **Autenticação:** `JWT Required`, `check_daily_limit(limit=3)`
+* **Corpo da Requisição (JSON):**
+
     ```json
     {
       "image": "string_base64_da_nova_imagem",
@@ -292,7 +410,9 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
       "longitude": -47.9297
     }
     ```
-  * **Resposta (Sucesso `202 Accepted` - Doença encontrada):**
+
+* **Resposta (Sucesso `202 Accepted` - Doença encontrada):**
+
     ```json
     {
       "status": "success",
@@ -300,7 +420,9 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
       "message": "Doença detectada. Estamos preparando seu plano de tratamento."
     }
     ```
-  * **Resposta (Sucesso `200 OK` - Sem Doença):**
+
+* **Resposta (Sucesso `200 OK` - Sem Doença):**
+
     ```json
     {
       "status": "success",
@@ -311,15 +433,16 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
 
 -----
 
-## Blueprint: Profile (`/api/v1/profile`)
+### Blueprint: Profile (`/api/v1/profile`)
 
 *Responsável por gerenciar os dados públicos e privados do perfil do usuário.*
 
-### `GET /me`
+#### `GET /me`
 
-  * **Descrição:** Busca os dados completos do perfil do usuário logado (para a Tela de Perfil).
-  * **Autenticação:** `JWT Required`
-  * **Resposta (Sucesso `200 OK`):**
+* **Descrição:** Busca os dados completos do perfil do usuário logado (para a Tela de Perfil).
+* **Autenticação:** `JWT Required`
+* **Resposta (Sucesso `200 OK`):**
+
     ```json
     {
       "status": "success",
@@ -339,11 +462,12 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
     }
     ```
 
-### `PUT /me`
+#### `PUT /me`
 
-  * **Descrição:** Atualiza os dados editáveis do perfil do usuário (bio, localização).
-  * **Autenticação:** `JWT Required`
-  * **Corpo da Requisição (JSON):**
+* **Descrição:** Atualiza os dados editáveis do perfil do usuário (bio, localização).
+* **Autenticação:** `JWT Required`
+* **Corpo da Requisição (JSON):**
+
     ```json
     {
       "bio": "Minha nova bio.",
@@ -351,7 +475,9 @@ Qualquer requisição a um endpoint protegido sem um token válido (ou com um to
       "state": "São Paulo"
     }
     ```
-  * **Resposta (Sucesso `200 OK`):** Retorna os dados que foram atualizados.
+  
+* **Resposta (Sucesso `200 OK`):** Retorna os dados que foram atualizados.
+
     ```json
     {
       "status": "success",
