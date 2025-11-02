@@ -1,6 +1,7 @@
 """
 Registro de todos os comandos do terminal que podem ser
-acessados usando o cmd/pws. 
+acessados usando o cmd/pws. Serve principalmente para debugging
+usando o terminal para testes e seeding.
 """
 
 import click
@@ -19,7 +20,7 @@ def register_commands(app):
         Popula a tabela 'achievements' com as definições padrão
         do arquivo achievements_utils.py.
         """
-        click.echo("🌱 Iniciando o seed de conquistas no banco de dados...")
+        click.secho("Iniciando o seed de conquistas no banco de dados...", fg="green")
         
         try:
             added_count = 0
@@ -43,13 +44,13 @@ def register_commands(app):
             
             if added_count > 0:
                 db.session.commit()
-                click.secho(f"\n✅ Sucesso! {added_count} novas conquistas foram adicionadas.", fg='green')
+                click.secho(f"Sucesso! {added_count} novas conquistas foram adicionadas.", fg='green')
             else:
-                click.secho("\n✨ Banco de dados de conquistas já estava atualizado.", fg='cyan')
+                click.secho("Banco de dados de conquistas já estava atualizado.", fg='cyan')
 
         except Exception as e:
             db.session.rollback()
-            click.secho(f"\n❌ Erro ao fazer o seed: {e}", fg='red')
+            click.secho(f"Erro ao fazer o seed: {e}", fg='red')
         finally:
             db.session.remove()
 
@@ -59,7 +60,7 @@ def register_commands(app):
         """
         Envia um comando 'PING' para o Redis para testar a conexão.
         """
-        click.echo("⚡ Tentando se conectar ao Redis...")
+        click.echo("Tentando se conectar ao Redis...")
         try:
             # Acessa o cliente Redis que foi anexado ao 'app' no __init__.py
             client = current_app.redis_client 
@@ -67,18 +68,18 @@ def register_commands(app):
             resposta = client.ping()
             
             if resposta:
-                click.secho(f"\n✅ Conexão bem-sucedida!", fg='green', bold=True)
+                click.secho(f"Conexão bem-sucedida!", fg='green', bold=True)
                 click.echo(f"   - Resposta do servidor: {resposta}")
             else:
-                click.secho("\n❌ Conexão falhou (mas sem erro). Resposta inesperada.", fg='red')
+                click.secho("Conexão falhou (mas sem erro). Resposta inesperada.", fg='red')
 
         except redis.exceptions.AuthenticationError:
-            click.secho("\n❌ ERRO DE AUTENTICAÇÃO!", fg='red', bold=True)
+            click.secho("ERRO DE AUTENTICAÇÃO!", fg='red', bold=True)
             click.echo("   - Verifique sua REDIS_PASSWORD no arquivo .env.")
         except redis.exceptions.ConnectionError as e:
-            click.secho("\n❌ ERRO DE CONEXÃO!", fg='red', bold=True)
+            click.secho("ERRO DE CONEXÃO!", fg='red', bold=True)
             click.echo("   - Verifique seu REDIS_ENDPOINT e REDIS_PORT no .env.")
             click.echo("   - Se estiverem certos, a rede pode estar bloqueando a porta.")
             click.echo(f"   - Detalhe: {e}")
         except Exception as e:
-            click.secho(f"\n❌ Um erro inesperado ocorreu: {e}", fg='red', bold=True)
+            click.secho(f"Um erro inesperado ocorreu: {e}", fg='red', bold=True)
