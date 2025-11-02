@@ -6,7 +6,6 @@ from app.services.gemini_service import GeminiService
 import json
 from datetime import datetime, timedelta
 from app.utils.achievement_utils import grant_achievement_if_not_exists
-from app.services.push_notification_service import send_push_to_token
 
 # Define o tempo de vida do cache que será usado pela task de enrich
 DEFAULT_CACHE_TTL = 60 * 60 * 24 * 7 # 7 dias
@@ -168,6 +167,7 @@ def send_watering_notification(fcm_token, plant_name, plant_id: str):
             print(f"--- [CELERY WORKER - Push]: ENVIANDO PUSH para {fcm_token[:10]}... sobre '{plant_name}' ---")
 
             # testando
+            from app.services.push_notification_service import send_push_to_token
             send_push_to_token(fcm_token, title, body, data=navigation_data)
             
         except Exception as e: 
@@ -290,7 +290,7 @@ def send_generic_push(fcm_token: str, title: str, body: str, data: dict = None):
     """Envia uma notificação push genérica."""
     with current_app.app_context():
         try:
-            
+            from app.services.push_notification_service import send_push_to_token
             send_push_to_token(fcm_token, title, body, data)
         except Exception as e:
             print(f"--- [CELERY WORKER - Push Genérico]: Falha ao enviar push: {e} ---")
