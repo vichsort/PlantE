@@ -7,8 +7,9 @@
 ![Redis](https://img.shields.io/badge/Redis-Cloud-red.svg)
 ![AWS](https://img.shields.io/badge/AWS-Cloud-orange.svg)
 
-API de backend (Flask) para o aplicativo móvel **Plante**. Este serviço gerencia a autenticação de usuários, jardins virtuais, identificação de plantas (via Plant.id), enriquecimento de dados (via Google Gemini), e dispara notificações de cuidado (via Celery/FCM) para uma experiência de cuidado de plantas gamificada e inteligente.  
-Este documento detalha os endpoints da API REST do Plante App, construída em Flask.
+API de backend (Flask) para o aplicativo móvel **PlantE**. Este serviço gerencia a autenticação de usuários, jardins virtuais, identificação de plantas (via Plant.id), enriquecimento de dados (via Google Gemini), e dispara notificações de cuidado (via Celery/FCM) para uma experiência de cuidado de plantas gamificada e inteligente.  
+Este documento detalha os endpoints da API REST do Plante App, construída em Flask.  
+O sistema está em funcionamento dentro de uma instância de EC2.
 
 ## Instalação
 
@@ -37,36 +38,8 @@ Este documento detalha os endpoints da API REST do Plante App, construída em Fl
 
 ### Configuração de Ambiente (O Arquivo `.env`)
 
-Este é o passo mais importante. Crie um arquivo chamado `.env` na raiz do projeto (copie do `.env.example`). Preencha-o com as seguintes informações:
-
-```env
-# Chave secreta para assinar os tokens JWT (use um gerador de string aleatória)
-JWT_SECRET_KEY="SUA_CHAVE_SECRETA_FORTE_AQUI"
-
-# Chaves das APIs Externas
-PLANT_ID_API_KEY="SUA_CHAVE_API_PLANT_ID"
-GEMINI_API_KEY="SUA_CHAVE_API_GEMINI"
-
-# Credenciais do Firebase Admin (APONTE PARA O ARQUIVO .JSON)
-# (Use o caminho absoluto de onde você salvou a chave)
-GOOGLE_APPLICATION_CREDENTIALS="C:/Users/Skcaluno/Documentos/chaves_projeto/plante-firebase-key.json"
-
-# Banco de Dados (NeonDB)
-DB_USER="<seu_usuario_neondb>"
-DB_PASSWORD="<sua_senha_neondb>"
-DB_HOST="<seu_host_neondb_ex: ep-abc-12345.sa-east-1.aws.neon.tech>"
-DB_PORT="5432"
-DB_NAME="<nome_do_seu_banco_neondb>"
-
-# Redis (APONTANDO PARA O SEU NGINX NA EC2)
-REDIS_USER="default"
-REDIS_PASSWORD="<sua_senha_do_redis_cloud>"
-REDIS_ENDPOINT="18.222.231.235" # <<< O IP PÚBLICO DA SUA EC2
-REDIS_PORT="80"                # <<< A porta 80 (que o NGINX está ouvindo)
-
-# Flag de Bypass (Garante que o bypass está DESLIGADO)
-BYPASS_REDIS="false"
-```
+Este é o passo mais importante. Este ambiente virtual é responsável por garantir a segurança e operabilidade do sistema, que será lido pelo `config.py`.  
+O arquivo .env.example possui todas as variáveis possíveis, então, clone este arquivo e renomeie-o para `.env` e adicione suas variáveis específicas.
 
 ### Preparação do Banco de Dados
 
